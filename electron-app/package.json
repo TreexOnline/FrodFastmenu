@@ -1,0 +1,46 @@
+{
+  "name": "treex-menu",
+  "version": "1.0.0",
+  "description": "Treex Menu - Electron app for restaurant management",
+  "main": "main.js",
+  "homepage": "https://www.treexonline.online/",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "build": "electron-builder",
+    "build:win": "electron-builder --win",
+    "dist": "npm run build"
+  },
+  "keywords": [
+    "electron",
+    "app",
+    "restaurant",
+    "menu",
+    "treex"
+  ],
+  "author": "Treex Online",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^26.8.1",
+    "electron-packager": "^17.1.2"
+  },
+  "build": {
+    "appId": "com.treex.menu",
+    "productName": "Treex Menu",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "node_modules/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": "dir"
+    },
+    "publish": null,
+    "compression": "store"
+  }
+}

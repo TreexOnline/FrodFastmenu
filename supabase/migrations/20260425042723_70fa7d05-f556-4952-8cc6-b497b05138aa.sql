@@ -1,0 +1,2 @@
+GRANT EXECUTE ON FUNCTION public.create_public_menu_order(uuid, uuid, text, text, text, numeric, text, text, boolean, timestamp with time zone, jsonb) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.can_create_public_order_item(uuid, uuid) TO anon, authenticated;

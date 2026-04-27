@@ -1,0 +1,20 @@
+project_id = "ansxttqnhpmktxogvtki"
+
+[functions.check-ip]
+verify_jwt = false
+
+[functions.zapi-webhook]
+verify_jwt = false
+
+[functions.zapi-notify-order]
+verify_jwt = false
+
+[functions.send-otp]
+verify_jwt = false
+
+[functions.verify-otp]
+verify_jwt = false
+
+[functions.admin-bootstrap]
+verify_jwt = false
+
