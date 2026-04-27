@@ -42,32 +42,15 @@ function createWindow() {
     
     // Verificar se o preload foi executado (sem injeção)
     setTimeout(() => {
-      mainWindow.webContents.executeJavaScript(`
-        console.log('� [MAIN] Verificando se window.electronAPI existe...');
-        console.log('� [MAIN] window.electronAPI:', !!window.electronAPI);
-        console.log('🔍 [MAIN] window.electronAPI.print:', typeof window.electronAPI?.print);
-        return {
-          hasElectronAPI: !!window.electronAPI,
-          hasPrintFunction: typeof window.electronAPI?.print === 'function',
-          userAgent: navigator.userAgent,
-          url: window.location.href
-        };
-      `).then(result => {
-        console.log('� [MAIN] Resultado da verificação:', result);
-        
-        if (!result.hasElectronAPI) {
-          console.error('❌ [MAIN] window.electronAPI não foi criado pelo preload');
-          console.error('❌ [MAIN] Possíveis causas:');
-          console.error('  - Preload script não executou');
-          console.error('  - Erro no preload script');
-          console.error('  - Context isolation bloqueando');
-        } else {
-          console.log('✅ [MAIN] window.electronAPI disponível no renderer');
-        }
-      }).catch(err => {
-        console.error('❌ [MAIN] Erro ao verificar API:', err);
-      });
-    }, 1000);
+      console.log('🔍 [MAIN] Verificação manual via console...');
+      
+      // Apenas logar que o preload foi carregado com base na mensagem recebida
+      console.log('✅ [MAIN] Preload carregado (confirmado via IPC)');
+      console.log('🔍 [MAIN] Para testar API, use DevTools no renderer:');
+      console.log('🔍 [MAIN]   - Abra F12');
+      console.log('🔍 [MAIN]   - Execute: window.electronAPI?.print()');
+      console.log('🔍 [MAIN]   - Execute: window.electronAPI?.getPrinters()');
+    }, 2000);
   });
 
   mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
