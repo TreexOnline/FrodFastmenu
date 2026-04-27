@@ -17,6 +17,24 @@ try {
       ipcRenderer.send('print-silent');
     },
     
+    // Função principal para impressão via HTML capturado
+    printOrder: (html) => {
+      console.log('🖨️ [PRELOAD] printOrder() chamado com HTML capturado');
+      console.log('📄 [PRELOAD] Tamanho do HTML:', html.length, 'caracteres');
+      
+      // Enviar HTML para o processo principal via IPC
+      ipcRenderer.invoke('print-order', {
+        html: html,
+        timestamp: new Date().toISOString(),
+        url: window.location.href,
+        title: document.title
+      }).then(result => {
+        console.log('✅ [PRELOAD] Resultado da impressão:', result);
+      }).catch(error => {
+        console.error('❌ [PRELOAD] Erro na impressão:', error);
+      });
+    },
+    
     // Listar impressoras disponíveis
     getPrinters: async () => {
       console.log('🖨️ [PRELOAD] Obtendo lista de impressoras...');

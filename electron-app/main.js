@@ -40,17 +40,101 @@ function createWindow() {
   mainWindow.webContents.on('did-finish-load', () => {
     console.log('✅ [MAIN] Página carregada completamente');
     
-    // Verificar se o preload foi executado (sem injeção)
+    // Injetar script para interceptar completamente window.open e window.print
     setTimeout(() => {
-      console.log('🔍 [MAIN] Verificação manual via console...');
+      console.log('� [MAIN] Injetando script de interceptação de impressão...');
       
-      // Apenas logar que o preload foi carregado com base na mensagem recebida
-      console.log('✅ [MAIN] Preload carregado (confirmado via IPC)');
-      console.log('🔍 [MAIN] Para testar API, use DevTools no renderer:');
-      console.log('🔍 [MAIN]   - Abra F12');
-      console.log('🔍 [MAIN]   - Execute: window.electronAPI?.print()');
-      console.log('🔍 [MAIN]   - Execute: window.electronAPI?.getPrinters()');
-    }, 2000);
+      mainWindow.webContents.executeJavaScript(`
+        (function() {
+          console.log('🔧 [INJECT] Iniciando interceptação completa...');
+          
+          // Sobrescrever window.open completamente
+          const originalOpen = window.open;
+          window.open = function(url, name, specs) {
+            console.log('🚫 [INJECT] window.open interceptado:', { url, name, specs });
+            
+            // Criar janela fake que não faz nada
+            const fakeWindow = {
+              print: function() {
+                console.log('🖨️ [INJECT] Print interceptado via fake window');
+                // Capturar HTML e enviar para Electron
+                const html = document.documentElement.outerHTML;
+                window.electronAPI?.printOrder(html);
+              },
+              close: function() {
+                console.log('🚫 [INJECT] Window close interceptado');
+              },
+              focus: function() {
+                console.log('🚫 [INJECT] Window focus interceptado');
+              },
+              document: document
+            };
+            
+            return fakeWindow;
+          };
+          
+          // Sobrescrever window.print completamente
+          const originalPrint = window.print;
+          window.print = function() {
+            console.log('�️ [INJECT] window.print interceptado diretamente');
+            
+            // Capturar HTML e enviar para Electron
+            const html = document.documentElement.outerHTML;
+            window.electronAPI?.printOrder(html);
+            
+            return false; // Prevenir comportamento padrão
+          };
+          
+          // Interceptar tentativas de impressão via document.execCommand
+          const originalExecCommand = document.execCommand;
+          document.execCommand = function(command, ...args) {
+            if (command === 'print') {
+              console.log('�️ [INJECT] document.execCommand print interceptado');
+              const html = document.documentElement.outerHTML;
+              window.electronAPI?.printOrder(html);
+              return true;
+            }
+            return originalExecCommand.apply(this, [command, ...args]);
+          };
+          
+          // Interceptar eventos de teclado Ctrl+P
+          document.addEventListener('keydown', function(e) {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'p') {
+              console.log('�️ [INJECT] Ctrl+P interceptado');
+              e.preventDefault();
+              e.stopPropagation();
+              
+              const html = document.documentElement.outerHTML;
+              window.electronAPI?.printOrder(html);
+            }
+          }, true);
+          
+          // Adicionar listener para qualquer botão de impressão
+          document.addEventListener('click', function(e) {
+            const target = e.target;
+            const text = target.textContent?.toLowerCase() || '';
+            const ariaLabel = target.getAttribute('aria-label')?.toLowerCase() || '';
+            
+            if (text.includes('imprimir') || text.includes('print') || 
+                ariaLabel.includes('imprimir') || ariaLabel.includes('print')) {
+              console.log('�️ [INJECT] Botão de impressão detectado:', target);
+              
+              setTimeout(() => {
+                const html = document.documentElement.outerHTML;
+                window.electronAPI?.printOrder(html);
+              }, 100);
+            }
+          }, true);
+          
+          console.log('✅ [INJECT] Interceptação completa instalada');
+          return true;
+        })();
+      `).then(() => {
+        console.log('✅ [MAIN] Script de interceptação injetado com sucesso');
+      }).catch(err => {
+        console.error('❌ [MAIN] Erro ao injetar script:', err);
+      });
+    }, 3000);
   });
 
   mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
@@ -221,6 +305,108 @@ function createWindow() {
     
     // Chamar impressão com silent: true
     ipcMain.emit('print', event, { silent: true });
+  });
+
+  // Escutar evento de impressão via HTML capturado
+  ipcMain.handle('print-order', async (event, data) => {
+    console.log('🖨️ [MAIN] print-order recebido:', { 
+      htmlLength: data.html?.length, 
+      url: data.url, 
+      title: data.title,
+      timestamp: data.timestamp 
+    });
+    
+    try {
+      // Criar janela oculta para impressão
+      const printWindow = new BrowserWindow({
+        width: 800,
+        height: 600,
+        show: false,
+        webPreferences: {
+          nodeIntegration: false,
+          contextIsolation: true,
+          sandbox: false
+        }
+      });
+      
+      console.log('🖨️ [MAIN] Janela de impressão criada');
+      
+      // Carregar HTML capturado via data URL
+      const htmlContent = data.html || '<html><body><p>Conteúdo não disponível</p></body></html>';
+      const dataUrl = `data:text/html;charset=utf-8,${encodeURIComponent(htmlContent)}`;
+      
+      await printWindow.loadURL(dataUrl);
+      console.log('✅ [MAIN] HTML carregado na janela de impressão');
+      
+      // Aguardar carregamento completo
+      await new Promise((resolve) => {
+        printWindow.webContents.once('did-finish-load', resolve);
+      });
+      
+      console.log('🖨️ [MAIN] Iniciando impressão...');
+      
+      // Obter impressoras disponíveis
+      const printers = await getPrinters();
+      const selectedPrinter = printers.length > 0 ? printers[0] : '';
+      
+      // Configurações de impressão
+      const printOptions = {
+        silent: false, // Mostrar diálogo para debug
+        printBackground: true,
+        scaleFactor: 1,
+        deviceName: selectedPrinter,
+        copies: 1,
+        marginsType: 0,
+        pageSize: 'A4',
+        landscape: false
+      };
+      
+      console.log('🖨️ [MAIN] Opções de impressão:', printOptions);
+      
+      // Executar impressão
+      await printWindow.webContents.print(printOptions);
+      
+      console.log('✅ [MAIN] Impressão concluída com sucesso');
+      
+      // Fechar janela após impressão
+      printWindow.close();
+      
+      return { 
+        success: true, 
+        timestamp: new Date().toISOString(),
+        printer: selectedPrinter,
+        htmlLength: htmlContent.length
+      };
+      
+    } catch (error) {
+      console.error('❌ [MAIN] Erro na impressão via print-order:', error);
+      
+      // Tentar fallback: imprimir na janela principal
+      try {
+        console.log('🔄 [MAIN] Tentando fallback na janela principal...');
+        
+        const printers = await getPrinters();
+        const selectedPrinter = printers.length > 0 ? printers[0] : '';
+        
+        await mainWindow.webContents.print({
+          silent: false,
+          printBackground: true,
+          deviceName: selectedPrinter
+        });
+        
+        console.log('✅ [MAIN] Fallback executado com sucesso');
+        
+        return { 
+          success: true, 
+          fallback: true,
+          timestamp: new Date().toISOString(),
+          printer: selectedPrinter
+        };
+      } catch (fallbackError) {
+        console.error('❌ [MAIN] Erro no fallback:', fallbackError);
+        throw new Error(`Erro principal: ${error.message}. Erro fallback: ${fallbackError.message}`);
+      }
+    }
   });
 
   // Escutar mensagens do renderer
