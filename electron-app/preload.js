@@ -35,6 +35,47 @@ try {
       });
     },
     
+    // Configurar impressora
+    setPrinter: async (printerName) => {
+      console.log('⚙️ [PRELOAD] Configurando impressora:', printerName);
+      return await ipcRenderer.invoke('set-printer', printerName);
+    },
+    
+    // Configurar seletores de conteúdo
+    setContentSelectors: async (selectors) => {
+      console.log('⚙️ [PRELOAD] Configurando seletores:', selectors);
+      return await ipcRenderer.invoke('set-content-selectors', selectors);
+    },
+    
+    // Configurar modo silencioso
+    setSilentMode: async (useSilent) => {
+      console.log('⚙️ [PRELOAD] Configurando modo silencioso:', useSilent);
+      return await ipcRenderer.invoke('set-silent-mode', useSilent);
+    },
+    
+    // Obter configurações atuais
+    getPrinterConfig: async () => {
+      console.log('⚙️ [PRELOAD] Obtendo configurações da impressora');
+      return await ipcRenderer.invoke('get-printer-config');
+    },
+    
+    // Escutar eventos de impressão
+    onPrintSuccess: (callback) => {
+      console.log('🖨️ [PRELOAD] Configurando listener para print-success');
+      ipcRenderer.on('print-success', (event, data) => {
+        console.log('✅ [PRELOAD] Impressão bem-sucedida:', data);
+        callback(data);
+      });
+    },
+    
+    onPrintError: (callback) => {
+      console.log('❌ [PRELOAD] Configurando listener para print-error');
+      ipcRenderer.on('print-error', (event, data) => {
+        console.log('❌ [PRELOAD] Erro na impressão:', data);
+        callback(data);
+      });
+    },
+    
     // Listar impressoras disponíveis
     getPrinters: async () => {
       console.log('🖨️ [PRELOAD] Obtendo lista de impressoras...');
