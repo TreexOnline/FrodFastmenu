@@ -117,6 +117,29 @@ try {
         console.log('🖨️ [PRELOAD] Resposta de impressão recebida:', data);
         callback(data);
       });
+    },
+    
+    // Funções de Auto-Update
+    onUpdateStatus: (callback) => {
+      console.log('🔄 [PRELOAD] Configurando listener para update-status');
+      ipcRenderer.on('update-status', (event, data) => {
+        console.log('🔄 [PRELOAD] Status de update:', data);
+        callback(data);
+      });
+    },
+    
+    onUpdateProgress: (callback) => {
+      console.log('📦 [PRELOAD] Configurando listener para update-progress');
+      ipcRenderer.on('update-progress', (event, data) => {
+        console.log('📦 [PRELOAD] Progresso de update:', data);
+        callback(data);
+      });
+    },
+    
+    // Verificar manualmente por atualizações
+    checkForUpdates: () => {
+      console.log('🔄 [PRELOAD] Verificando atualizações manualmente...');
+      ipcRenderer.send('check-for-updates');
     }
   });
 

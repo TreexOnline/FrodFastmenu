@@ -2,6 +2,7 @@ const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const { exec } = require('child_process');
 const fs = require('fs');
+const { autoUpdater } = require('electron-updater');
 
 let mainWindow;
 
@@ -818,34 +819,127 @@ function createWindow() {
   ipcMain.on('debug-message', (event, message) => {
     console.log('📞 [MAIN] Mensagem do renderer:', message);
   });
-}
 
-// Quando o app estiver pronto
-app.whenReady().then(() => {
-  console.log('🚀 [MAIN] App pronto, criando janela...');
-  createWindow();
-});
-
-// Fechar todas as janelas quando todas forem fechadas
-app.on('window-all-closed', () => {
-  console.log('🔒 [MAIN] Todas as janelas fechadas, saindo...');
-  if (process.platform !== 'darwin') {
-    app.quit();
+  // Sistema de Auto-Update
+  function setupAutoUpdater() {
+    console.log('🔄 [UPDATE] Configurando auto-updater...');
+    
+    // Configurar servidor de updates
+    autoUpdater.setFeedURL({
+      provider: 'github',
+      owner: 'VictorTreex',
+      repo: 'app-FrodFast-eletron'
+    });
+    
+    // Eventos do auto-updater
+    autoUpdater.on('checking-for-update', () => {
+      console.log('🔍 [UPDATE] Verificando atualizações...');
+      if (mainWindow) {
+        mainWindow.webContents.send('update-status', { status: 'checking' });
+      }
+    });
+    
+    autoUpdater.on('update-available', (info) => {
+      console.log('⬇️ [UPDATE] Atualização disponível:', info.version);
+      if (mainWindow) {
+        mainWindow.webContents.send('update-status', { 
+          status: 'available', 
+          version: info.version,
+          releaseNotes: info.releaseNotes 
+        });
+      }
+    });
+    
+    autoUpdater.on('update-not-available', (info) => {
+      console.log('✅ [UPDATE] App está atualizado. Versão:', info.version);
+      if (mainWindow) {
+        mainWindow.webContents.send('update-status', { 
+          status: 'not-available', 
+          version: info.version 
+        });
+      }
+    });
+    
+    autoUpdater.on('error', (err) => {
+      console.error('❌ [UPDATE] Erro no update:', err);
+      if (mainWindow) {
+        mainWindow.webContents.send('update-status', { 
+          status: 'error', 
+          error: err.message 
+        });
+      }
+    });
+    
+    autoUpdater.on('download-progress', (progressObj) => {
+      let log_message = "📦 [UPDATE] Baixando atualização: ";
+      log_message += Math.round(progressObj.percent) + "%";
+      log_message += " (" + progressObj.transferred + "/" + progressObj.total + ")";
+      console.log(log_message);
+      
+      if (mainWindow) {
+        mainWindow.webContents.send('update-progress', {
+          percent: Math.round(progressObj.percent),
+          transferred: progressObj.transferred,
+          total: progressObj.total
+        });
+      }
+    });
+    
+    autoUpdater.on('update-downloaded', (info) => {
+      console.log('🚀 [UPDATE] Atualização baixada! Reiniciando app...');
+      if (mainWindow) {
+        mainWindow.webContents.send('update-status', { 
+          status: 'downloaded',
+          version: info.version
+        });
+      }
+      
+      // Reiniciar e instalar após 3 segundos
+      setTimeout(() => {
+        autoUpdater.quitAndInstall();
+      }, 3000);
+    });
   }
-});
 
-app.on('activate', () => {
-  console.log('🔄 [MAIN] App ativado');
-  if (BrowserWindow.getAllWindows().length === 0) {
+  // Quando o app estiver pronto
+  app.whenReady().then(() => {
+    console.log('🚀 [MAIN] App pronto, criando janela...');
+    
+    // Configurar auto-updater
+    setupAutoUpdater();
+    
+    // Criar janela principal
     createWindow();
-  }
-});
+    
+    // Verificar atualizações após 5 segundos
+    setTimeout(() => {
+      console.log('🔄 [UPDATE] Iniciando verificação de atualizações...');
+      autoUpdater.checkForUpdatesAndNotify();
+    }, 5000);
+  });
 
-// Log de erros não capturados
-process.on('uncaughtException', (err) => {
-  console.error('💥 [MAIN] Erro não capturado:', err);
-});
+  // Fechar todas as janelas quando todas forem fechadas
+  app.on('window-all-closed', () => {
+    console.log('🔒 [MAIN] Todas as janelas fechadas, saindo...');
+    if (process.platform !== 'darwin') {
+      app.quit();
+    }
+  });
 
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('💥 [MAIN] Rejeição não tratada:', reason);
-});
+  app.on('activate', () => {
+    console.log('🔄 [MAIN] App ativado');
+    if (BrowserWindow.getAllWindows().length === 0) {
+      createWindow();
+    }
+  });
+
+  // Log de erros não capturados
+  process.on('uncaughtException', (err) => {
+    console.error('💥 [MAIN] Erro não capturado:', err);
+  });
+
+  process.on('unhandledRejection', (reason, promise) => {
+    console.error('💥 [MAIN] Rejeição não tratada:', reason);
+  });
+
+  console.log('🚀 [MAIN] Iniciando app FrodFast com Auto-Update...');
