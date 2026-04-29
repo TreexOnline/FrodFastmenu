@@ -82,13 +82,16 @@ async function processPrintQueue() {
 async function executePrintJob(job) {
   console.log('🖨️ [JOB] Executando job:', job.id);
   
+  // ✅ selectedPrinter global na função (escopo correto)
+  let selectedPrinter = '';
+  
   try {
     // Obter impressoras disponíveis
     const printers = await getPrinters();
     console.log('🖨️ [JOB] Impressoras disponíveis:', printers);
     
     // Selecionar impressora (configurada ou primeira disponível)
-    let selectedPrinter = printerConfig.selectedPrinter;
+    selectedPrinter = printerConfig.selectedPrinter;
     if (!selectedPrinter || !printers.includes(selectedPrinter)) {
       selectedPrinter = printers.length > 0 ? printers[0] : '';
       console.log('🖨️ [JOB] Usando primeira impressora disponível:', selectedPrinter);
@@ -96,21 +99,33 @@ async function executePrintJob(job) {
       console.log('🖨️ [JOB] Usando impressora configurada:', selectedPrinter);
     }
     
+    // 🔴 VALIDAÇÃO OBRIGATÓRIA - Impressora deve existir
+    if (!selectedPrinter) {
+      console.error('❌ [JOB] Nenhuma impressora disponível para impressão PDV');
+      throw new Error('Nenhuma impressora disponível');
+    }
+    
+    // ✅ DEBUG OBRIGATÓRIO - Verificar nomes EXATOS
+    console.log('🖨️ [DEBUG] Impressoras encontradas:', printers.map(p => `"${p}"`));
+    console.log('🖨️ [DEBUG] Impressora selecionada:', `"${selectedPrinter}"`);
+    console.log('🖨️ [JOB] Impressora validada para PDV:', selectedPrinter);
+    
     // Criar template HTML
     const htmlContent = job.data.html || '<p>Conteúdo não disponível</p>';
     const printTemplate = createPrintTemplate(htmlContent, job.data.title || 'Documento');
     
     console.log('📄 [JOB] Template HTML criado, tamanho:', printTemplate.length, 'caracteres');
     
-    // Criar janela oculta para impressão
+    // Criar janela oculta para impressão (100% invisível)
     const printWindow = new BrowserWindow({
       width: 800,
       height: 600,
-      show: false,
+      show: false, // 🔴 OBRIGATÓRIO - janela 100% oculta
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,
-        sandbox: false
+        sandbox: false,
+        offscreen: true // 🔴 MELHOR - renderização offscreen
       }
     });
     
@@ -122,125 +137,101 @@ async function executePrintJob(job) {
     await printWindow.loadURL(dataUrl);
     console.log('✅ [JOB] HTML carregado na janela de impressão');
     
-    // Aguardar carregamento completo
-    await new Promise((resolve) => {
-      printWindow.webContents.once('did-finish-load', resolve);
+    // ✅ ESPERA GARANTIDA - did-finish-load pode não disparar com dataURL
+    await new Promise(resolve => setTimeout(resolve, 300));
+    
+    // 🔴 Garantir que janela está 100% oculta
+    printWindow.once('ready-to-show', () => {
+      printWindow.hide();
     });
     
     console.log('🖨️ [JOB] Iniciando impressão...');
     
-    // Configurações de impressão
+    // Configurações de impressão (100% SILENCIOSO - PDV MODE)
     const printOptions = {
-      silent: printerConfig.useSilentMode,
+      silent: true, // 🔴 OBRIGATÓRIO - nunca mostrar diálogo
       printBackground: true,
       scaleFactor: 1,
       deviceName: selectedPrinter,
       copies: 1,
       marginsType: 0,
-      pageSize: 'A4',
+      pageSize: {
+        width: 80000,  // ✅ 80mm - impressora térmica
+        height: 200000 // ✅ grande o suficiente para cupom
+      },
       landscape: false
     };
     
+    console.log('🖨️ [JOB] Enviando para impressora (PDV MODE):', selectedPrinter);
     console.log('🖨️ [JOB] Opções de impressão:', printOptions);
     
-    // Executar impressão com verificação de sucesso
-    try {
-      await printWindow.webContents.print(printOptions);
-      console.log('✅ [JOB] Impressão concluída com sucesso');
-      
-      // Notificar sucesso
-      if (mainWindow) {
-        mainWindow.webContents.send('print-success', {
-          jobId: job.id,
-          printer: selectedPrinter,
-          timestamp: new Date().toISOString()
-        });
-      }
-      
-      // Limpar janela corretamente
-      printWindow.removeAllListeners();
-      printWindow.destroy(); // Corrigido leak de memória
-      
-      return { 
-        success: true, 
-        timestamp: new Date().toISOString(),
-        printer: selectedPrinter,
-        contentLength: htmlContent.length
-      };
-      
-    } catch (printError) {
-      console.error('❌ [JOB] Erro na impressão silenciosa:', printError.message);
-      
-      // Tentar novamente com diálogo se falhar silent
-      if (printerConfig.useSilentMode) {
-        console.log('🔄 [JOB] Tentando novamente com diálogo...');
-        
-        const fallbackOptions = { ...printOptions, silent: false };
-        await printWindow.webContents.print(fallbackOptions);
-        
-        console.log('✅ [JOB] Impressão com diálogo concluída');
-        
-        // Notificar sucesso com fallback
-        if (mainWindow) {
-          mainWindow.webContents.send('print-success', {
-            jobId: job.id,
-            printer: selectedPrinter,
-            fallback: true,
-            timestamp: new Date().toISOString()
-          });
-        }
-        
+    // 🚫 PROIBIDO: Qualquer fallback visual
+    // 🚫 PROIBIDO: silent: false
+    // 🚫 PROIBIDO: abrir janelas
+    
+    // Executar impressão 100% silenciosa com callback
+    return new Promise((resolve, reject) => {
+      printWindow.webContents.print(printOptions, (success, errorType) => {
+        // Limpar janela imediatamente (não esperar)
         printWindow.removeAllListeners();
         printWindow.destroy();
         
-        return { 
-          success: true, 
-          fallback: true,
-          timestamp: new Date().toISOString(),
-          printer: selectedPrinter
-        };
-      } else {
-        throw printError;
-      }
-    }
+        if (success) {
+          console.log('✅ [JOB] Impressão PDV concluída com sucesso');
+          
+          // Notificar sucesso
+          if (mainWindow) {
+            mainWindow.webContents.send('print-success', {
+              jobId: job.id,
+              printer: selectedPrinter,
+              timestamp: new Date().toISOString(),
+              silent: true
+            });
+          }
+          
+          resolve({ 
+            success: true, 
+            timestamp: new Date().toISOString(),
+            printer: selectedPrinter,
+            contentLength: htmlContent.length,
+            silent: true
+          });
+        } else {
+          console.error('❌ [JOB] Erro na impressão PDV:', errorType);
+          
+          // � NÃO TENTAR FALLBACK VISUAL
+          // Em PDV real, se falhar, apenas reportar erro
+          
+          if (mainWindow) {
+            mainWindow.webContents.send('print-error', {
+              jobId: job.id,
+              error: errorType || 'Erro desconhecido na impressão',
+              printer: selectedPrinter,
+              timestamp: new Date().toISOString()
+            });
+          }
+          
+          reject(new Error(`Erro na impressão PDV: ${errorType}`));
+        }
+      });
+    });
     
   } catch (error) {
     console.error('❌ [JOB] Erro geral na impressão:', error.message);
     
-    // Tentar fallback na janela principal
-    try {
-      console.log('🔄 [JOB] Tentando fallback na janela principal...');
-      
-      const printers = await getPrinters();
-      const selectedPrinter = printers.length > 0 ? printers[0] : '';
-      
-      await mainWindow.webContents.print({
-        silent: false, // Sempre mostrar diálogo no fallback
-        printBackground: true,
-        deviceName: selectedPrinter
+    // � PROIBIDO: Fallback visual em PDV
+    // Em PDV real, se falhar, apenas reportar erro
+    
+    if (mainWindow) {
+      mainWindow.webContents.send('print-error', {
+        jobId: job.id,
+        error: error.message,
+        printer: selectedPrinter,
+        timestamp: new Date().toISOString()
       });
-      
-      console.log('✅ [JOB] Fallback executado com sucesso');
-      
-      if (mainWindow) {
-        mainWindow.webContents.send('print-success', {
-          jobId: job.id,
-          printer: selectedPrinter,
-          fallback: true,
-          timestamp: new Date().toISOString()
-        });
-      }
-      
-      return { 
-        success: true, 
-        fallback: true,
-        timestamp: new Date().toISOString(),
-        printer: selectedPrinter
-      };
-    } catch (fallbackError) {
-      console.error('❌ [JOB] Erro no fallback:', fallbackError.message);
-      throw new Error(`Erro principal: ${error.message}. Erro fallback: ${fallbackError.message}`);
     }
+    
+    throw new Error(`Erro na impressão PDV: ${error.message}`);
   }
 }
 
@@ -942,4 +933,6 @@ function createWindow() {
     console.error('💥 [MAIN] Rejeição não tratada:', reason);
   });
 
-  console.log('🚀 [MAIN] Iniciando app FrodFast com Auto-Update...');
+}
+
+console.log('🚀 [MAIN] Iniciando app FrodFast com Auto-Update...');
