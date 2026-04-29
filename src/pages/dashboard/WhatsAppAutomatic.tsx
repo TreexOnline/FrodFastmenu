@@ -10,7 +10,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { useWhatsappAddon } from "@/hooks/useWhatsappAddon";
-import { useWhatsAppWebSocket } from "@/hooks/useWhatsAppWebSocket";
 import {
   MessageSquare,
   Smartphone,
@@ -74,49 +73,49 @@ interface ConnectionStatus {
   qr: string | null;
 }
 
-export default function WhatsAppPage() {
+export default function WhatsAppAutomaticPage() {
   const { user } = useAuth();
   const addon = useWhatsappAddon();
-  const { connected: wsConnected, status: wsStatus, qrCode: wsQrCode } = useWhatsAppWebSocket();
   const [session, setSession] = useState<WhatsAppSession | null>(null);
   const [autoMessage, setAutoMessage] = useState<AutoMessage | null>(null);
   const [loading, setLoading] = useState(true);
   const [connecting, setConnecting] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus | null>(null);
   const [messageText, setMessageText] = useState("");
   const [cooldownHours, setCooldownHours] = useState("24");
   const [isActive, setIsActive] = useState(true);
+  const pollRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Usar dados do WebSocket quando disponíveis, senão usar do banco
-  const connected = wsStatus?.connected ?? session?.status === 'connected';
-  const phoneNumber = wsStatus?.phone ?? session?.phone;
-  const profileName = wsStatus?.profileName ?? session?.profile_name;
-  const qrCode = connected ? null : wsQrCode ?? session?.qr_code;
+  const connected = connectionStatus?.connected ?? session?.status === 'connected';
+  const phoneNumber = connectionStatus?.phone ?? session?.phone;
+  const profileName = connectionStatus?.profileName ?? session?.profile_name;
+  const qrCode = connected ? null : connectionStatus?.qr ?? session?.qr_code;
 
   const loadSession = async () => {
     if (!user) return;
     const { data } = await supabase
-      .from("whatsapp_sessions" as any)
+      .from("whatsapp_sessions")
       .select("*")
       .eq("store_id", user.id)
       .maybeSingle();
-    setSession(data as WhatsAppSession);
+    setSession(data);
     setLoading(false);
   };
 
   const loadAutoMessage = async () => {
     if (!user) return;
     const { data } = await supabase
-      .from("whatsapp_auto_messages" as any)
+      .from("whatsapp_auto_messages")
       .select("*")
       .eq("store_id", user.id)
       .maybeSingle();
     
     if (data) {
-      setAutoMessage(data as AutoMessage);
-      setMessageText((data as any).message_text);
-      setCooldownHours((data as any).cooldown_hours.toString());
-      setIsActive((data as any).is_active);
+      setAutoMessage(data);
+      setMessageText(data.message_text);
+      setCooldownHours(data.cooldown_hours.toString());
+      setIsActive(data.is_active);
     }
   };
 
@@ -125,10 +124,28 @@ export default function WhatsAppPage() {
     loadAutoMessage();
   }, [user]);
 
-  // Realtime updates para mensagens (WebSocket cuida do status)
+  // Realtime updates
   useEffect(() => {
     if (!user) return;
     
+    const sessionChannel = supabase
+      .channel("whatsapp_sessions")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "whatsapp_sessions",
+          filter: `store_id=eq.${user.id}`,
+        },
+        (payload) => {
+          if (payload.new) {
+            setSession(payload.new as WhatsAppSession);
+          }
+        },
+      )
+      .subscribe();
+
     const messageChannel = supabase
       .channel("whatsapp_auto_messages")
       .on(
@@ -136,25 +153,61 @@ export default function WhatsAppPage() {
         {
           event: "*",
           schema: "public",
-          table: "whatsapp_auto_messages" as any,
+          table: "whatsapp_auto_messages",
           filter: `store_id=eq.${user.id}`,
         },
         (payload) => {
           if (payload.new) {
-            const data = payload.new as any;
-            setAutoMessage(data as AutoMessage);
-            setMessageText(data.message_text);
-            setCooldownHours(data.cooldown_hours.toString());
-            setIsActive(data.is_active);
+            setAutoMessage(payload.new as AutoMessage);
+            setMessageText(payload.new.message_text);
+            setCooldownHours(payload.new.cooldown_hours.toString());
+            setIsActive(payload.new.is_active);
           }
         },
       )
       .subscribe();
 
     return () => {
+      supabase.removeChannel(sessionChannel);
       supabase.removeChannel(messageChannel);
     };
   }, [user]);
+
+  // Poll for QR updates
+  useEffect(() => {
+    if (connected) {
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+      return;
+    }
+
+    if (!session?.id && !connectionStatus) return;
+    if (pollRef.current) return;
+
+    pollRef.current = setInterval(() => {
+      checkConnection();
+    }, 5000);
+
+    return () => {
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+    };
+  }, [connected, session?.id, connectionStatus?.qr]);
+
+  const checkConnection = async () => {
+    try {
+      const { data } = await supabase.functions.invoke("whatsapp-connect/status", {
+        body: { store_id: user?.id }
+      });
+      setConnectionStatus(data);
+    } catch (error: any) {
+      console.error("Status check error:", error);
+    }
+  };
 
   const handleConnect = async () => {
     setConnecting(true);
@@ -166,6 +219,11 @@ export default function WhatsAppPage() {
       if (data?.sessionId) {
         toast.success("Conexão iniciada! Aguarde o QR Code...");
         await loadSession();
+        
+        // Começar a verificar status
+        setTimeout(() => {
+          checkConnection();
+        }, 2000);
       }
     } catch (error: any) {
       toast.error("Erro ao conectar: " + (error.message || "Tente novamente"));
@@ -183,6 +241,7 @@ export default function WhatsAppPage() {
         body: { store_id: user?.id }
       });
       
+      setConnectionStatus({ connected: false, status: 'disconnected', phone: null, profileName: null, qr: null });
       toast.success("WhatsApp desconectado");
       await loadSession();
     } catch (error: any) {
@@ -343,7 +402,6 @@ export default function WhatsAppPage() {
     );
   }
 
-
   return (
     <div className="container mx-auto p-4 lg:p-8 max-w-5xl space-y-6">
       <div className="flex items-center gap-3">
@@ -423,7 +481,7 @@ export default function WhatsAppPage() {
                 )}
                 <Button
                   variant="outline"
-                  onClick={() => loadSession()}
+                  onClick={checkConnection}
                   disabled={connecting}
                 >
                   <RefreshCw
@@ -480,51 +538,12 @@ export default function WhatsAppPage() {
         </CardContent>
       </Card>
 
-      {/* Preview da Mensagem */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Bot className="w-5 h-5" />
-            Preview da Mensagem do Bot
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="rounded-2xl border bg-muted/50 p-4">
-            <div className="flex items-start gap-3">
-              <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
-                <Bot className="w-4 h-4 text-primary" />
-              </div>
-              <div className="flex-1">
-                <p className="text-sm font-medium text-muted-foreground mb-1">
-                  Assistente Virtual
-                </p>
-                <div className="rounded-lg bg-white p-3 shadow-sm">
-                  {messageText.trim() ? (
-                    <p className="text-sm whitespace-pre-line">
-                      {messageText}
-                    </p>
-                  ) : (
-                    <p className="text-sm text-muted-foreground italic">
-                      Configure uma mensagem de boas-vindas...
-                    </p>
-                  )}
-                </div>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {isActive ? "🟢 Ativo" : "🔴 Inativo"} • 
-                  Cooldown: {cooldownHours}h
-                </p>
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
       {/* Configuração da Mensagem */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Send className="w-5 h-5" />
-            Configurar Mensagem Automática
+            Mensagem Automática
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -595,43 +614,6 @@ export default function WhatsAppPage() {
             )}
             Salvar Configuração
           </Button>
-        </CardContent>
-      </Card>
-
-      {/* Logs de Mensagens */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <MessageCircle className="w-5 h-5" />
-            Logs de Mensagens Recentes
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            <div className="rounded-lg border p-4">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm font-medium">Status do Sistema</span>
-                <Badge variant={connected ? "default" : "secondary"}>
-                  {connected ? "🟢 Conectado" : "🔴 Desconectado"}
-                </Badge>
-              </div>
-              <div className="space-y-1 text-sm text-muted-foreground">
-                <p>• Backend: {wsConnected ? "🟢 Online" : "🔴 Offline"}</p>
-                <p>• Auto resposta: {isActive ? "🟢 Ativa" : "🔴 Inativa"}</p>
-                <p>• Mensagem configurada: {messageText.trim() ? "🟢 Sim" : "🔴 Não"}</p>
-              </div>
-            </div>
-            
-            <div className="text-center py-4 text-muted-foreground">
-              <MessageCircle className="w-8 h-8 mx-auto mb-2 opacity-50" />
-              <p className="text-sm">
-                Nenhuma mensagem recebida ainda
-              </p>
-              <p className="text-xs">
-                Envie uma mensagem para o WhatsApp conectado para testar
-              </p>
-            </div>
-          </div>
         </CardContent>
       </Card>
     </div>
