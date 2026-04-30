@@ -98,7 +98,7 @@ export default function WhatsAppPage() {
     const { data } = await supabase
       .from("whatsapp_sessions" as any)
       .select("*")
-      .eq("store_id", user.id)
+      .eq("user_id", user.id)
       .maybeSingle();
     setSession(data as WhatsAppSession);
     setLoading(false);
@@ -107,16 +107,16 @@ export default function WhatsAppPage() {
   const loadAutoMessage = async () => {
     if (!user) return;
     const { data } = await supabase
-      .from("whatsapp_auto_messages" as any)
+      .from("whatsapp_auto_responder" as any)
       .select("*")
-      .eq("store_id", user.id)
+      .eq("user_id", user.id)
       .maybeSingle();
     
     if (data) {
       setAutoMessage(data as AutoMessage);
-      setMessageText((data as any).message_text);
+      setMessageText((data as any).message);
       setCooldownHours((data as any).cooldown_hours.toString());
-      setIsActive((data as any).is_active);
+      setIsActive((data as any).enabled);
     }
   };
 
@@ -130,22 +130,22 @@ export default function WhatsAppPage() {
     if (!user) return;
     
     const messageChannel = supabase
-      .channel("whatsapp_auto_messages")
+      .channel("whatsapp_auto_responder")
       .on(
         "postgres_changes",
         {
           event: "*",
           schema: "public",
-          table: "whatsapp_auto_messages" as any,
-          filter: `store_id=eq.${user.id}`,
+          table: "whatsapp_auto_responder" as any,
+          filter: `user_id=eq.${user.id}`,
         },
         (payload) => {
           if (payload.new) {
             const data = payload.new as any;
             setAutoMessage(data as AutoMessage);
-            setMessageText(data.message_text);
+            setMessageText(data.message);
             setCooldownHours(data.cooldown_hours.toString());
-            setIsActive(data.is_active);
+            setIsActive(data.enabled);
           }
         },
       )
@@ -160,13 +160,11 @@ export default function WhatsAppPage() {
     setConnecting(true);
     try {
       const { data } = await supabase.functions.invoke("whatsapp-connect/connect", {
-        body: { store_id: user?.id }
+        body: { user_id: user?.id }
       });
       
-      if (data?.sessionId) {
-        toast.success("Conexão iniciada! Aguarde o QR Code...");
-        await loadSession();
-      }
+      toast.success("Conexão iniciada! Aguarde o QR Code...");
+      loadSession();
     } catch (error: any) {
       toast.error("Erro ao conectar: " + (error.message || "Tente novamente"));
     } finally {
@@ -180,11 +178,11 @@ export default function WhatsAppPage() {
     setConnecting(true);
     try {
       await supabase.functions.invoke("whatsapp-connect/disconnect", {
-        body: { store_id: user?.id }
+        body: { user_id: user?.id }
       });
       
-      toast.success("WhatsApp desconectado");
-      await loadSession();
+      toast.success("WhatsApp desconectado!");
+      loadSession();
     } catch (error: any) {
       toast.error("Erro ao desconectar: " + (error.message || "Tente novamente"));
     } finally {
@@ -202,10 +200,10 @@ export default function WhatsAppPage() {
     try {
       await supabase.functions.invoke("whatsapp-connect/save-config", {
         body: {
-          store_id: user?.id,
-          message_text: messageText,
+          user_id: user?.id,
+          message: messageText,
           cooldown_hours: parseInt(cooldownHours),
-          is_active: isActive
+          enabled: isActive
         }
       });
       
