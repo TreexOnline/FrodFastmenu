@@ -1,17 +1,16 @@
 {
   "name": "frodfast",
-  "version": "1.0.1",
+  "version": "1.2.3",
   "description": "FrodFast - Electron app for restaurant management",
   "main": "main.js",
   "homepage": "https://www.treexonline.online/",
   "scripts": {
     "start": "electron .",
     "dev": "electron . --dev",
-    "build": "electron-builder",
-    "build:win": "electron-builder --win --publish never",
+    "build": "electron-builder --publish never",
     "dist": "npm run build",
-    "publish": "electron-builder --win --publish always",
-    "release": "npm run build && npm run publish"
+    "publish": "electron-builder --publish always",
+    "release": "npm run publish"
   },
   "keywords": [
     "electron",
@@ -27,8 +26,10 @@
   "license": "MIT",
   "devDependencies": {
     "electron": "^28.0.0",
-    "electron-builder": "^26.8.1",
-    "electron-packager": "^17.1.2",
+    "electron-builder": "^26.8.1"
+  },
+  "dependencies": {
+    "electron-log": "^4.4.8",
     "electron-updater": "^6.3.9"
   },
   "build": {
@@ -47,9 +48,20 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64"
+          ]
         }
-      ]
+      ],
+      "artifactName": "FrodFast-${version}.${ext}",
+      "verifyUpdateCodeSignature": false,
+      "forceCodeSigning": false
     },
     "nsis": {
       "oneClick": false,
@@ -65,11 +77,8 @@
         "repo": "app-FrodFast-eletron"
       }
     ],
-    "compression": "maximum",
+    "compression": "store",
     "generateUpdatesFilesForAllChannels": true
-  },
-  "dependencies": {
-    "electron-updater": "^6.3.9"
   },
   "repository": {
     "type": "git",

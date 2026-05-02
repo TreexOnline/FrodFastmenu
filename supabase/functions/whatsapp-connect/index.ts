@@ -1,8 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
-import { makeWASocket, useMultiFileAuthState } from "https://esm.sh/@whiskeysockets/baileys@6.7.9"
-import { randomBytes } from "https://deno.land/std@0.168.0/crypto/mod.ts"
-import { encode } from "https://deno.land/std@0.168.0/encoding/base64.ts"
+import { makeWASocket, useMultiFileAuthState, DisconnectReason } from "https://esm.sh/@whiskeysockets/baileys@6.7.9"
 
 // Tipos para as interfaces
 interface WhatsAppSession {
@@ -133,7 +131,7 @@ async function handleConnect(req: Request, supabase: any, userId: string) {
     }
 
     // Criar ou atualizar sessão
-    const sessionId = randomBytes(16).toString('hex')
+    const sessionId = Math.random().toString(36).substring(2, 18) + Date.now().toString(36)
     const authPath = `./auth/${userId}_${sessionId}`
 
     const sessionData: Partial<WhatsAppSession> = {
@@ -192,7 +190,7 @@ async function startWhatsAppSession(session: WhatsAppSession, supabase: any) {
       // Pasta já existe
     }
 
-    const { state, saveCreds } = await useMultiFileAuthState(session.auth_path!)
+    const { state, saveCreds } = await useMultiFileAuthState(session.auth_path || '')
 
     const sock = makeWASocket({
       authState: state,
@@ -245,10 +243,10 @@ async function startWhatsAppSession(session: WhatsAppSession, supabase: any) {
           .eq('id', session.id)
 
         // Limpar QR code
-        qrCodes.delete(session.store_id)
+        qrCodes.delete(session.user_id)
 
         // Broadcast via WebSocket
-        await broadcastToWebSocket(session.store_id, 'connection_update', {
+        await broadcastToWebSocket(session.user_id, 'connection_update', {
           connected: true,
           status: 'connected',
           phone: authInfo.id?.replace('@s.whatsapp.net', '') || null,
@@ -268,7 +266,7 @@ async function startWhatsAppSession(session: WhatsAppSession, supabase: any) {
           .eq('id', session.id)
 
         // Broadcast via WebSocket
-        await broadcastToWebSocket(session.store_id, 'connection_update', {
+        await broadcastToWebSocket(session.user_id, 'connection_update', {
           connected: false,
           status: 'disconnected',
           phone: null,
@@ -291,7 +289,7 @@ async function startWhatsAppSession(session: WhatsAppSession, supabase: any) {
       // Ignorar mensagens enviadas pelo próprio usuário
       if (message.key.fromMe) return
 
-      await handleIncomingMessage(message, session.store_id, supabase, sock)
+      await handleIncomingMessage(message, session.user_id, supabase, sock)
     })
 
   } catch (error: any) {
@@ -330,10 +328,10 @@ async function handleIncomingMessage(message: Message, userId: string, supabase:
 
     // Obter configuração de auto resposta
     const { data: autoMessage, error: configError } = await supabase
-      .from('whatsapp_auto_responder')
+      .from('whatsapp_auto_messages')
       .select('*')
-      .eq('user_id', userId)
-      .eq('enabled', true)
+      .eq('store_id', userId)
+      .eq('is_active', true)
       .single()
 
     if (configError || !autoMessage) {
@@ -342,23 +340,23 @@ async function handleIncomingMessage(message: Message, userId: string, supabase:
     }
 
     console.log('✅ Auto message config found:', {
-      messageText: autoMessage.message.substring(0, 50) + '...',
+      messageText: autoMessage.message_text.substring(0, 50) + '...',
       cooldownHours: autoMessage.cooldown_hours,
-      enabled: autoMessage.enabled
+      isActive: autoMessage.is_active
     })
 
     // Verificar cooldown
     const customerNumber = message.key.remoteJid?.replace('@s.whatsapp.net', '')
     const { data: lastCooldown, error: cooldownError } = await supabase
-      .from('whatsapp_contacts_cooldown')
-      .select('last_auto_reply_at')
-      .eq('user_id', userId)
-      .eq('phone_number', customerNumber)
+      .from('whatsapp_message_logs')
+      .select('last_sent_at')
+      .eq('store_id', userId)
+      .eq('customer_number', customerNumber)
       .single()
 
-    if (lastCooldown?.last_auto_reply_at) {
+    if (lastCooldown?.last_sent_at) {
       const cooldownHours = autoMessage.cooldown_hours
-      const cooldownTime = new Date(lastCooldown.last_auto_reply_at)
+      const cooldownTime = new Date(lastCooldown.last_sent_at)
       cooldownTime.setHours(cooldownTime.getHours() + cooldownHours)
       
       if (new Date() < cooldownTime) {
@@ -369,11 +367,11 @@ async function handleIncomingMessage(message: Message, userId: string, supabase:
 
     // Enviar resposta automática
     console.log('📤 Sending auto reply to:', customerNumber)
-    console.log('📝 Message content:', autoMessage.message)
+    console.log('📝 Message content:', autoMessage.message_text)
     
     try {
       await sock.sendMessage(customerNumber + '@s.whatsapp.net', {
-        text: autoMessage.message
+        text: autoMessage.message_text
       })
       console.log('✅ Message sent successfully!')
     } catch (sendError) {
@@ -385,48 +383,39 @@ async function handleIncomingMessage(message: Message, userId: string, supabase:
     const messageContent = message.message?.conversation || message.message?.extendedTextMessage?.text || ''
     
     const { error: receivedLogError } = await supabase
-      .from('whatsapp_messages')
+      .from('whatsapp_message_logs')
       .insert({
-        user_id: userId,
-        direction: 'in',
-        from_number: customerNumber,
-        to_number: sock.user?.id?.split(':')[0] || 'unknown',
-        content: messageContent,
-        message_type: 'text',
-        status: 'received',
-        is_auto_reply: false
+        store_id: userId,
+        customer_number: customerNumber,
+        customer_name: null,
+        message_received: messageContent,
+        message_sent: null,
+        last_sent_at: null,
+        message_count: 1
       })
 
-    // Registrar mensagem enviada
+    // Registrar mensagem enviada e atualizar cooldown
     const { error: sentLogError } = await supabase
-      .from('whatsapp_messages')
-      .insert({
-        user_id: userId,
-        direction: 'out',
-        from_number: sock.user?.id?.split(':')[0] || 'unknown',
-        to_number: customerNumber,
-        content: autoMessage.message,
-        message_type: 'text',
-        status: 'sent',
-        is_auto_reply: true
-      })
-
-    // Atualizar cooldown
-    const { error: cooldownUpdateError } = await supabase
-      .from('whatsapp_contacts_cooldown')
+      .from('whatsapp_message_logs')
       .upsert({
-        user_id: userId,
-        phone_number: customerNumber,
-        last_auto_reply_at: new Date().toISOString()
+        store_id: userId,
+        customer_number: customerNumber,
+        customer_name: null,
+        message_received: messageContent,
+        message_sent: autoMessage.message_text,
+        last_sent_at: new Date().toISOString(),
+        message_count: 1
       }, {
-        onConflict: 'user_id,phone_number'
+        onConflict: 'store_id,customer_number'
       })
 
-    if (receivedLogError || sentLogError || cooldownUpdateError) {
-      console.error('❌ Failed to log message or update cooldown:', {
+    // Cooldown já atualizado no upsert anterior (last_sent_at)
+    // Não é necessário tabela separada de cooldown
+
+    if (receivedLogError || sentLogError) {
+      console.error('❌ Failed to log message:', {
         receivedLogError,
-        sentLogError,
-        cooldownUpdateError
+        sentLogError
       })
     } else {
       console.log('📝 Message logged and cooldown updated successfully')
@@ -570,11 +559,16 @@ async function handleGetConfig(req: Request, supabase: any, userId: string) {
 }
 
 // Função para broadcast via WebSocket
-async function broadcastToWebSocket(storeId: string, type: string, data: any) {
+async function broadcastToWebSocket(userId: string, type: string, data: any) {
   try {
-    await supabase.functions.invoke('whatsapp-websocket/broadcast', {
-      body: { store_id: storeId, type, data }
-    })
+    // Nota: Esta função não será usada no novo sistema
+    // Mantida apenas para compatibilidade com código antigo
+    console.log('📡 WebSocket broadcast (desativado):', { userId, type, data })
+    
+    // Comentado porque o whatsapp-websocket foi desativado
+    // await supabase.functions.invoke('whatsapp-websocket/broadcast', {
+    //   body: { user_id: userId, type, data }
+    // })
   } catch (error) {
     console.error('WebSocket broadcast error:', error)
   }

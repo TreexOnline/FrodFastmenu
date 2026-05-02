@@ -110,16 +110,37 @@ try {
       };
     },
     
-    // Escutar resposta da impressão
-    onPrintComplete: (callback) => {
-      console.log('🖨️ [PRELOAD] Configurando listener para print-complete');
-      ipcRenderer.on('print-complete', (event, data) => {
-        console.log('🖨️ [PRELOAD] Resposta de impressão recebida:', data);
+    // ========================= IMPRESSÃO CENTRALIZADA =========================
+    
+    // Imprimir pedido - função principal e unificada
+    printOrder: async (html, orderId = null, timestamp = null) => {
+      console.log('🖨️ [PRELOAD] Enviando pedido para impressão:', { orderId, contentLength: html?.length });
+      try {
+        const result = await ipcRenderer.invoke('print-order', { 
+          html, 
+          orderId: orderId || 'order_' + Date.now(),
+          timestamp: timestamp || new Date().toISOString()
+        });
+        console.log('🖨️ [PRELOAD] Pedido enviado para fila:', result);
+        return result;
+      } catch (error) {
+        console.error('❌ [PRELOAD] Erro ao enviar pedido:', error);
+        return { success: false, error: error.message };
+      }
+    },
+    
+    // Escutar conclusão de jobs de impressão
+    onPrintJobComplete: (callback) => {
+      console.log('🖨️ [PRELOAD] Configurando listener para print-job-complete');
+      ipcRenderer.on('print-job-complete', (event, data) => {
+        console.log('🖨️ [PRELOAD] Job de impressão concluído:', data);
         callback(data);
       });
     },
     
-    // Funções de Auto-Update
+    // ========================= AUTO UPDATE =========================
+    
+    // Escutar eventos de status do auto-update
     onUpdateStatus: (callback) => {
       console.log('🔄 [PRELOAD] Configurando listener para update-status');
       ipcRenderer.on('update-status', (event, data) => {
@@ -128,6 +149,7 @@ try {
       });
     },
     
+    // Escutar eventos de progresso do download
     onUpdateProgress: (callback) => {
       console.log('📦 [PRELOAD] Configurando listener para update-progress');
       ipcRenderer.on('update-progress', (event, data) => {
@@ -140,21 +162,35 @@ try {
     checkForUpdates: () => {
       console.log('🔄 [PRELOAD] Verificando atualizações manualmente...');
       ipcRenderer.send('check-for-updates');
+    },
+    
+    // Instalar atualização manualmente
+    installUpdateNow: async () => {
+      console.log('🚀 [PRELOAD] Instalando atualização solicitada...');
+      return await ipcRenderer.invoke('install-update-now');
     }
   });
 
   console.log('✅ [PRELOAD] contextBridge.exposeInMainWorld executado com sucesso');
   
-  // Verificar se a API foi realmente exposta
+  // Criar helper global para auto-print
   setTimeout(() => {
     try {
       if (typeof window !== 'undefined') {
-        console.log('🔍 [PRELOAD] Verificando se window.electronAPI foi criado...');
-        // Não podemos acessar window.electronAPI diretamente aqui devido ao context isolation
-        console.log('✅ [PRELOAD] API exposta via contextBridge');
+        // Função helper global para interceptação automática
+        window.electronAutoPrint = function(html) {
+          console.log('�️ [PRELOAD] Auto-print interceptado:', html?.length, 'caracteres');
+          if (window.electronAPI && window.electronAPI.printOrder) {
+            window.electronAPI.printOrder(html, 'auto_order_' + Date.now());
+          } else {
+            console.error('❌ [PRELOAD] electronAPI.printOrder não disponível');
+          }
+        };
+        
+        console.log('✅ [PRELOAD] window.electronAutoPrint criado para interceptação');
       }
     } catch (err) {
-      console.error('❌ [PRELOAD] Erro ao verificar API:', err);
+      console.error('❌ [PRELOAD] Erro ao criar helper global:', err);
     }
   }, 100);
   

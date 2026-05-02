@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { useWhatsappAddon } from "@/hooks/useWhatsappAddon";
+import { useWhatsAppWebSocket } from "@/hooks/useWhatsAppWebSocket";
 import {
   MessageSquare,
   Smartphone,
@@ -76,32 +77,20 @@ interface ConnectionStatus {
 export default function WhatsAppAutomaticPage() {
   const { user } = useAuth();
   const addon = useWhatsappAddon();
-  const [session, setSession] = useState<WhatsAppSession | null>(null);
+  const whatsapp = useWhatsAppWebSocket();
   const [autoMessage, setAutoMessage] = useState<AutoMessage | null>(null);
   const [loading, setLoading] = useState(true);
-  const [connecting, setConnecting] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus | null>(null);
   const [messageText, setMessageText] = useState("");
   const [cooldownHours, setCooldownHours] = useState("24");
   const [isActive, setIsActive] = useState(true);
-  const pollRef = useRef<NodeJS.Timeout | null>(null);
 
-  const connected = connectionStatus?.connected ?? session?.status === 'connected';
-  const phoneNumber = connectionStatus?.phone ?? session?.phone;
-  const profileName = connectionStatus?.profileName ?? session?.profile_name;
-  const qrCode = connected ? null : connectionStatus?.qr ?? session?.qr_code;
-
-  const loadSession = async () => {
-    if (!user) return;
-    const { data } = await supabase
-      .from("whatsapp_sessions")
-      .select("*")
-      .eq("store_id", user.id)
-      .maybeSingle();
-    setSession(data);
-    setLoading(false);
-  };
+  // Usar dados do hook em vez de estado local
+  const connected = whatsapp.connected;
+  const phoneNumber = whatsapp.phone;
+  const profileName = whatsapp.profileName;
+  const qrCode = whatsapp.qrCode;
+  const status = whatsapp.status;
 
   const loadAutoMessage = async () => {
     if (!user) return;
@@ -117,35 +106,19 @@ export default function WhatsAppAutomaticPage() {
       setCooldownHours(data.cooldown_hours.toString());
       setIsActive(data.is_active);
     }
+    setLoading(false);
   };
 
   useEffect(() => {
-    loadSession();
-    loadAutoMessage();
+    if (user) {
+      loadAutoMessage();
+    }
   }, [user]);
 
-  // Realtime updates
+  // Realtime updates apenas para auto messages (status vem do hook)
   useEffect(() => {
     if (!user) return;
     
-    const sessionChannel = supabase
-      .channel("whatsapp_sessions")
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "whatsapp_sessions",
-          filter: `store_id=eq.${user.id}`,
-        },
-        (payload) => {
-          if (payload.new) {
-            setSession(payload.new as WhatsAppSession);
-          }
-        },
-      )
-      .subscribe();
-
     const messageChannel = supabase
       .channel("whatsapp_auto_messages")
       .on(
@@ -168,86 +141,27 @@ export default function WhatsAppAutomaticPage() {
       .subscribe();
 
     return () => {
-      supabase.removeChannel(sessionChannel);
       supabase.removeChannel(messageChannel);
     };
   }, [user]);
 
-  // Poll for QR updates
-  useEffect(() => {
-    if (connected) {
-      if (pollRef.current) {
-        clearInterval(pollRef.current);
-        pollRef.current = null;
-      }
-      return;
-    }
-
-    if (!session?.id && !connectionStatus) return;
-    if (pollRef.current) return;
-
-    pollRef.current = setInterval(() => {
-      checkConnection();
-    }, 5000);
-
-    return () => {
-      if (pollRef.current) {
-        clearInterval(pollRef.current);
-        pollRef.current = null;
-      }
-    };
-  }, [connected, session?.id, connectionStatus?.qr]);
-
-  const checkConnection = async () => {
-    try {
-      const { data } = await supabase.functions.invoke("whatsapp-connect/status", {
-        body: { store_id: user?.id }
-      });
-      setConnectionStatus(data);
-    } catch (error: any) {
-      console.error("Status check error:", error);
-    }
-  };
-
   const handleConnect = async () => {
-    setConnecting(true);
     try {
-      const { data } = await supabase.functions.invoke("whatsapp-connect/connect", {
-        body: { store_id: user?.id }
-      });
-      
-      if (data?.sessionId) {
-        toast.success("Conexão iniciada! Aguarde o QR Code...");
-        await loadSession();
-        
-        // Começar a verificar status
-        setTimeout(() => {
-          checkConnection();
-        }, 2000);
-      }
+      await whatsapp.connectWhatsApp();
+      toast.success("Conexão iniciada! Aguarde o QR Code...");
     } catch (error: any) {
       toast.error("Erro ao conectar: " + (error.message || "Tente novamente"));
-    } finally {
-      setConnecting(false);
     }
   };
 
   const handleDisconnect = async () => {
     if (!confirm("Desconectar o WhatsApp?")) return;
     
-    setConnecting(true);
     try {
-      await supabase.functions.invoke("whatsapp-connect/disconnect", {
-        body: { store_id: user?.id }
-      });
-      
-      setConnectionStatus({ connected: false, status: 'disconnected', phone: null, profileName: null, qr: null });
+      await whatsapp.disconnectWhatsApp();
       toast.success("WhatsApp desconectado");
-      await loadSession();
     } catch (error: any) {
       toast.error("Erro ao desconectar: " + (error.message || "Tente novamente"));
-    } finally {
-      setConnecting(false);
     }
   };
 
@@ -259,17 +173,24 @@ export default function WhatsAppAutomaticPage() {
 
     setSaving(true);
     try {
-      await supabase.functions.invoke("whatsapp-connect/save-config", {
-        body: {
+      // Salvar diretamente no Supabase (não precisa mais da Edge Function)
+      const { data, error } = await supabase
+        .from("whatsapp_auto_messages")
+        .upsert({
           store_id: user?.id,
           message_text: messageText,
           cooldown_hours: parseInt(cooldownHours),
           is_active: isActive
-        }
-      });
+        }, {
+          onConflict: 'store_id'
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
       
       toast.success("Configuração salva com sucesso!");
-      await loadAutoMessage();
+      setAutoMessage(data);
     } catch (error: any) {
       toast.error("Erro ao salvar: " + (error.message || "Tente novamente"));
     } finally {
@@ -277,7 +198,7 @@ export default function WhatsAppAutomaticPage() {
     }
   };
 
-  if (loading || addon.loading) {
+  if (loading || addon.loading || whatsapp.loading) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
         <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
@@ -440,6 +361,16 @@ export default function WhatsAppAutomaticPage() {
                       </span>
                     )}
                   </>
+                ) : status === 'connecting' ? (
+                  <Badge className="bg-yellow-500/15 text-yellow-600 hover:bg-yellow-500/20 border-yellow-500/30">
+                    <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
+                    Conectando
+                  </Badge>
+                ) : status === 'qr' ? (
+                  <Badge className="bg-blue-500/15 text-blue-600 hover:bg-blue-500/20 border-blue-500/30">
+                    <QrCode className="w-3.5 h-3.5 mr-1" />
+                    QR Code
+                  </Badge>
                 ) : (
                   <Badge variant="outline" className="text-muted-foreground">
                     <XCircle className="w-3.5 h-3.5 mr-1" />
@@ -470,8 +401,8 @@ export default function WhatsAppAutomaticPage() {
 
               <div className="flex flex-wrap gap-2">
                 {!connected && (
-                  <Button onClick={handleConnect} disabled={connecting}>
-                    {connecting ? (
+                  <Button onClick={handleConnect} disabled={whatsapp.loading}>
+                    {whatsapp.loading ? (
                       <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                     ) : (
                       <QrCode className="w-4 h-4 mr-2" />
@@ -481,12 +412,12 @@ export default function WhatsAppAutomaticPage() {
                 )}
                 <Button
                   variant="outline"
-                  onClick={checkConnection}
-                  disabled={connecting}
+                  onClick={whatsapp.refreshStatus}
+                  disabled={whatsapp.loading}
                 >
                   <RefreshCw
                     className={`w-4 h-4 mr-2 ${
-                      connecting ? "animate-spin" : ""
+                      whatsapp.loading ? "animate-spin" : ""
                     }`}
                   />
                   Atualizar
@@ -495,7 +426,7 @@ export default function WhatsAppAutomaticPage() {
                   <Button
                     variant="destructive"
                     onClick={handleDisconnect}
-                    disabled={connecting}
+                    disabled={whatsapp.loading}
                   >
                     <PowerOff className="w-4 h-4 mr-2" />
                     Desconectar

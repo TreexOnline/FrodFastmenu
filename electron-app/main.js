@@ -243,9 +243,105 @@ function createWindow() {
 
   mainWindow.loadURL('https://www.treexonline.online/');
 
+  // Injetar script de interceptação de impressão quando a página carregar
+  mainWindow.webContents.once('did-finish-load', () => {
+    console.log('🖨️ [MAIN] Injetando script de interceptação de impressão...');
+    
+    const interceptionScript = `
+      // ========================= INTERCEPTAÇÃO DE IMPRESSÃO =========================
+      
+      // Sobrescrever window.print() para interceptar
+      const originalPrint = window.print;
+      window.print = function() {
+        console.log('🖨️ [INTERCEPT] window.print() interceptado');
+        
+        // Capturar HTML da página atual
+        const html = document.documentElement.outerHTML;
+        
+        // Enviar para impressão silenciosa do Electron
+        if (window.electronAPI && window.electronAPI.printOrder) {
+          window.electronAPI.printOrder(html, 'intercepted_print_' + Date.now());
+        } else if (window.electronAutoPrint) {
+          window.electronAutoPrint(html);
+        } else {
+          console.error('❌ [INTERCEPT] API de impressão não disponível');
+        }
+        
+        return false; // Bloquear comportamento original
+      };
+      
+      // Interceptar eventos de impressão
+      window.addEventListener('beforeprint', (e) => {
+        console.log('🖨️ [INTERCEPT] Evento beforeprint interceptado');
+        e.preventDefault();
+        e.stopPropagation();
+        
+        const html = document.documentElement.outerHTML;
+        if (window.electronAPI && window.electronAPI.printOrder) {
+          window.electronAPI.printOrder(html, 'beforeprint_' + Date.now());
+        }
+      });
+      
+      // Interceptar clicks em botões de impressão
+      document.addEventListener('click', (e) => {
+        const target = e.target;
+        const text = target.textContent?.toLowerCase() || '';
+        const className = target.className?.toLowerCase() || '';
+        
+        // Verificar se é botão de impressão
+        if (
+          text.includes('imprimir') || 
+          text.includes('print') ||
+          className.includes('print') ||
+          className.includes('imprimir') ||
+          target.onclick?.toString().includes('print') ||
+          target.getAttribute('onclick')?.includes('print')
+        ) {
+          console.log('🖨️ [INTERCEPT] Botão de impressão interceptado:', text, className);
+          e.preventDefault();
+          e.stopPropagation();
+          
+          // Capturar HTML do pedido (procurar por elementos específicos)
+          const orderElement = target.closest('.pedido, .order, .receipt, .cupom, [data-order-id]');
+          const html = orderElement ? orderElement.outerHTML : document.documentElement.outerHTML;
+          
+          if (window.electronAPI && window.electronAPI.printOrder) {
+            window.electronAPI.printOrder(html, 'button_print_' + Date.now());
+          } else if (window.electronAutoPrint) {
+            window.electronAutoPrint(html);
+          }
+        }
+      }, true);
+      
+      // Interceptar listeners de impressão existentes
+      const originalAddEventListener = EventTarget.prototype.addEventListener;
+      EventTarget.prototype.addEventListener = function(type, listener, options) {
+        if (type === 'print' || type === 'beforeprint') {
+          console.log('🖨️ [INTERCEPT] addEventListener de impressão interceptado:', type);
+          return; // Bloquear registro
+        }
+        return originalAddEventListener.call(this, type, listener, options);
+      };
+      
+      console.log('✅ [INTERCEPT] Sistema de interceptação de impressão ativado');
+    `;
+    
+    mainWindow.webContents.executeJavaScript(interceptionScript)
+      .then(() => {
+        console.log('✅ [MAIN] Script de interceptação injetado com sucesso');
+      })
+      .catch(err => {
+        console.error('❌ [MAIN] Erro ao injetar script:', err);
+      });
+  });
+
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
-    mainWindow.webContents.openDevTools();
+    
+    // DevTools apenas em ambiente de desenvolvimento
+    if (process.env.NODE_ENV === 'development' || process.argv.includes('--dev')) {
+      mainWindow.webContents.openDevTools();
+    }
   });
 }
 
@@ -261,124 +357,214 @@ ipcMain.handle('get-printers', async () => {
   }
 });
 
-ipcMain.on('print', async (event, options = {}) => {
-  console.log('🖨️ [MAIN] Evento de impressão recebido!', { 
-    senderId: event.sender.id,
-    timestamp: new Date().toISOString(),
-    frameId: event.frameId,
-    options
+// ========================= SISTEMA DE IMPRESSÃO CENTRALIZADO =========================
+
+function createPrintJobWindow(htmlContent) {
+  return new Promise((resolve, reject) => {
+    console.log('🖨️ [PRINT] Criando janela de impressão...');
+    
+    const printWindow = new BrowserWindow({
+      width: 800,
+      height: 600,
+      show: false,
+      webPreferences: {
+        nodeIntegration: true,
+        contextIsolation: false,
+        offscreen: true
+      }
+    });
+    
+    // Template de cupom fiscal
+    const cupomTemplate = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <title>FrodFast - Cupom</title>
+        <style>
+          body { 
+            font-family: 'Courier New', monospace; 
+            margin: 0; 
+            padding: 10px; 
+            width: 280px;
+            font-size: 12px;
+          }
+          .header { text-align: center; font-weight: bold; margin-bottom: 10px; }
+          .items { margin: 10px 0; }
+          .item { display: flex; justify-content: space-between; margin: 2px 0; }
+          .total { font-weight: bold; border-top: 1px dashed #000; padding-top: 5px; }
+          .footer { text-align: center; margin-top: 10px; font-size: 10px; }
+        </style>
+      </head>
+      <body>
+        ${htmlContent}
+      </body>
+      </html>
+    `;
+    
+    const dataUrl = `data:text/html;charset=UTF-8,${encodeURIComponent(cupomTemplate)}`;
+    
+    printWindow.loadURL(dataUrl)
+      .then(() => {
+        console.log('🖨️ [PRINT] Janela carregada, aguardando render...');
+        
+        // Aguardar renderização completa
+        setTimeout(() => {
+          resolve(printWindow);
+        }, 1000);
+      })
+      .catch(err => {
+        console.error('❌ [PRINT] Erro ao carregar janela:', err);
+        reject(err);
+      });
   });
+}
+
+async function executePrintJob(job) {
+  console.log('🖨️ [PRINT] Executando job:', job.id);
   
   try {
-    // Obter impressoras disponíveis
-    const printers = await getPrinters();
+    const printWindow = await createPrintJobWindow(job.data.html);
     
-    if (printers.length === 0) {
-      console.error('❌ [MAIN] Nenhuma impressora encontrada!');
-      event.reply('print-complete', { success: false, error: 'Nenhuma impressora encontrada' });
-      return;
-    }
+    const printOptions = {
+      silent: true,
+      printBackground: true,
+      deviceName: printerSettings.selectedPrinter || printerSettings.defaultPrinter,
+      copies: 1,
+      marginsType: 0,
+      pageSize: { 
+        width: 0.08, // 80mm em metros
+        height: 0.2  // 200mm em metros
+      },
+      landscape: false,
+      printSelectionOnly: false,
+      collate: false
+    };
     
-    console.log('🖨️ [MAIN] Impressoras disponíveis:', printers);
+    console.log('🖨️ [PRINT] Enviando para impressora:', printOptions.deviceName);
     
-    // Usar primeira impressora ou especificada
-    const selectedPrinter = options.deviceName || printers[0];
-    console.log('🖨️ [MAIN] Usando impressora:', selectedPrinter);
+    printWindow.webContents.print(printOptions)
+      .then(() => {
+        console.log('✅ [PRINT] Job concluído com sucesso:', job.id);
+        printWindow.close();
+        
+        // Notificar frontend sobre sucesso
+        if (mainWindow) {
+          mainWindow.webContents.send('print-job-complete', {
+            jobId: job.id,
+            success: true,
+            timestamp: new Date().toISOString()
+          });
+        }
+        
+        // Continuar processando fila
+        setTimeout(() => processPrintQueue(), 1000);
+      })
+      .catch(err => {
+        console.error('❌ [PRINT] Erro na impressão:', err);
+        printWindow.close();
+        
+        // Tentar fallback sem impressora específica
+        if (printOptions.deviceName) {
+          console.log('🔄 [PRINT] Tentando fallback sem impressora específica...');
+          const fallbackOptions = { ...printOptions, deviceName: '' };
+          
+          printWindow.webContents.print(fallbackOptions)
+            .then(() => {
+              console.log('✅ [PRINT] Job concluído com fallback:', job.id);
+              printWindow.close();
+              
+              if (mainWindow) {
+                mainWindow.webContents.send('print-job-complete', {
+                  jobId: job.id,
+                  success: true,
+                  fallback: true,
+                  timestamp: new Date().toISOString()
+                });
+              }
+              
+              setTimeout(() => processPrintQueue(), 1000);
+            })
+            .catch(err2 => {
+              console.error('❌ [PRINT] Erro no fallback:', err2);
+              printWindow.close();
+              
+              if (mainWindow) {
+                mainWindow.webContents.send('print-job-complete', {
+                  jobId: job.id,
+                  success: false,
+                  error: err2.message,
+                  timestamp: new Date().toISOString()
+                });
+              }
+              
+              setTimeout(() => processPrintQueue(), 1000);
+            });
+        } else {
+          if (mainWindow) {
+            mainWindow.webContents.send('print-job-complete', {
+              jobId: job.id,
+              success: false,
+              error: err.message,
+              timestamp: new Date().toISOString()
+            });
+          }
+          
+          setTimeout(() => processPrintQueue(), 1000);
+        }
+      });
+      
+  } catch (error) {
+    console.error('❌ [PRINT] Erro ao executar job:', error);
     
     if (mainWindow) {
-      console.log('🖨️ [MAIN] Disparando impressão...');
-      
-      // Configurações de impressão detalhadas
-      const printOptions = {
-        silent: options.silent || false,
-        printBackground: true,
-        scaleFactor: 1,
-        deviceName: selectedPrinter,
-        copies: 1,
-        marginsType: 0, // 0: default, 1: none, 2: minimum, 3: custom
-        pageSize: 'A4',
-        landscape: false,
-        printSelectionOnly: false,
-        collate: false
-      };
-      
-      console.log('🖨️ [MAIN] Opções de impressão:', printOptions);
-      
-      mainWindow.webContents.print(printOptions)
-        .then(() => {
-          console.log('✅ [MAIN] Impressão concluída com sucesso');
-          event.reply('print-complete', { 
-            success: true, 
-            timestamp: new Date().toISOString(),
-            printer: selectedPrinter
-          });
-        })
-        .catch(err => {
-          console.error('❌ [MAIN] Erro na impressão:', err);
-          
-          // Tentar sem deviceName específico
-          if (options.deviceName) {
-            console.log('🔄 [MAIN] Tentando novamente sem deviceName específico...');
-            const fallbackOptions = { ...printOptions, deviceName: '' };
-            
-            mainWindow.webContents.print(fallbackOptions)
-              .then(() => {
-                console.log('✅ [MAIN] Impressão concluída com sucesso (fallback)');
-                event.reply('print-complete', { 
-                  success: true, 
-                  timestamp: new Date().toISOString(),
-                  printer: 'default'
-                });
-              })
-              .catch(err2 => {
-                console.error('❌ [MAIN] Erro na impressão (fallback):', err2);
-                event.reply('print-complete', { 
-                  success: false, 
-                  error: `Erro principal: ${err.message}. Erro fallback: ${err2.message}` 
-                });
-              });
-          } else {
-            event.reply('print-complete', { success: false, error: err.message });
-          }
-        });
-    } else {
-      console.error('❌ [MAIN] MainWindow não encontrada');
-      event.reply('print-complete', { success: false, error: 'MainWindow not found' });
+      mainWindow.webContents.send('print-job-complete', {
+        jobId: job.id,
+        success: false,
+        error: error.message,
+        timestamp: new Date().toISOString()
+      });
     }
-  } catch (error) {
-    console.error('❌ [MAIN] Erro geral na impressão:', error);
-    event.reply('print-complete', { success: false, error: error.message });
+    
+    setTimeout(() => processPrintQueue(), 1000);
   }
-});
+}
 
-ipcMain.on('print-silent', async (event) => {
-  console.log('🖨️ [MAIN] Evento de impressão silenciosa recebido');
+function processPrintQueue() {
+  if (isPrinting || printQueue.length === 0) {
+    return;
+  }
   
-  // Chamar impressão com silent: true
-  ipcMain.emit('print', event, { silent: true });
-});
+  isPrinting = true;
+  const job = printQueue.shift();
+  
+  console.log('🖨️ [QUEUE] Processando job:', job.id, 'Restantes:', printQueue.length);
+  
+  executePrintJob(job);
+}
 
-ipcMain.handle('print-order', async (event, data) => {
-  console.log('🖨️ [MAIN] print-order recebido:', { 
-    contentLength: data.html?.length, 
-    url: data.url, 
-    title: data.title,
-    timestamp: data.timestamp 
+ipcMain.handle('print-order', async (event, { html, orderId, timestamp }) => {
+  console.log('🖨️ [PRINT] print-order recebido:', { 
+    orderId,
+    contentLength: html?.length, 
+    timestamp 
   });
   
   // Criar job e adicionar à fila
   const jobId = 'print_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
   const job = {
     id: jobId,
-    data: data,
+    data: { html, orderId, timestamp },
     timestamp: new Date().toISOString()
   };
   
   printQueue.push(job);
-  console.log('🖨️ [QUEUE] Job adicionado à fila:', jobId, 'Fila:', printQueue.length);
+  console.log('🖨️ [QUEUE] Job adicionado à fila:', jobId, 'Total:', printQueue.length);
   
-  // Processar fila imediatamente
-  processPrintQueue();
+  // Processar fila se não estiver ocupado
+  if (!isPrinting) {
+    processPrintQueue();
+  }
   
   // Retornar ID do job para acompanhamento
   return { 
@@ -448,11 +634,26 @@ ipcMain.on('debug-message', (event, message) => {
 function setupAutoUpdater() {
   console.log('🔄 [UPDATE] Configurando auto-updater...');
   
-  // Configurar servidor de updates
-  autoUpdater.setFeedURL({
-    provider: 'github',
-    owner: 'VictorTreex',
-    repo: 'app-FrodFast-eletron'
+  // Configurações nativas do electron-updater
+  // Não usar setFeedURL - electron-builder já configura automaticamente
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.allowDowngrade = false;
+  
+  // Habilitar logger para debug (produção)
+  autoUpdater.logger = require('electron-log');
+  autoUpdater.logger.transports.file.level = 'info';
+  
+  // IPC para verificação manual de atualizações
+  ipcMain.on('check-for-updates', () => {
+    console.log('🔍 [UPDATE] Verificação manual solicitada pelo renderer...');
+    autoUpdater.checkForUpdates();
+  });
+  
+  // IPC para instalação manual quando usuário confirmar
+  ipcMain.handle('install-update-now', async () => {
+    console.log('🚀 [UPDATE] Instalando atualização solicitada pelo usuário...');
+    autoUpdater.quitAndInstall();
   });
   
   // Eventos do auto-updater
@@ -510,18 +711,17 @@ function setupAutoUpdater() {
   });
   
   autoUpdater.on('update-downloaded', (info) => {
-    console.log('🚀 [UPDATE] Atualização baixada! Reiniciando app...');
+    console.log('🚀 [UPDATE] Atualização baixada! Aguardando confirmação do usuário...');
     if (mainWindow) {
       mainWindow.webContents.send('update-status', { 
         status: 'downloaded',
-        version: info.version
+        version: info.version,
+        message: 'Atualização pronta para instalar'
       });
     }
     
-    // Reiniciar e instalar após 3 segundos
-    setTimeout(() => {
-      autoUpdater.quitAndInstall();
-    }, 3000);
+    // Não reiniciar automaticamente - aguardar confirmação do usuário
+    // O usuário pode clicar em botão ou fechar o app para instalar automaticamente
   });
 }
 
@@ -532,14 +732,19 @@ app.whenReady().then(() => {
   // Configurar auto-updater
   setupAutoUpdater();
   
-  // Criar janela principal
   createWindow();
   
-  // Verificar atualizações após 5 segundos
+  // Primeira verificação de atualizações após 5 segundos
   setTimeout(() => {
-    console.log('🔄 [UPDATE] Iniciando verificação de atualizações...');
-    autoUpdater.checkForUpdatesAndNotify();
+    console.log('🔄 [UPDATE] Iniciando primeira verificação de atualizações...');
+    autoUpdater.checkForUpdates();
   }, 5000);
+  
+  // Verificação recorrente automática a cada 60 segundos
+  setInterval(() => {
+    console.log('🔄 [UPDATE] Verificação recorrente de atualizações...');
+    autoUpdater.checkForUpdates();
+  }, 60000); // 60 segundos
 });
 
 // Fechar todas as janelas quando todas forem fechadas

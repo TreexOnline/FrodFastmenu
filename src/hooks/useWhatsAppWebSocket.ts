@@ -1,151 +1,240 @@
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
+import { WHATSAPP_API_CONFIG } from "@/config/whatsappApi";
 
-interface WebSocketMessage {
-  type: string;
-  data: any;
+interface WhatsAppStatus {
+  connected: boolean;
+  status: string;
+  phone: string | null;
+  profileName: string | null;
+  qr: string | null;
 }
 
 export function useWhatsAppWebSocket() {
   const { user } = useAuth();
   const [connected, setConnected] = useState(false);
-  const [status, setStatus] = useState<any>(null);
+  const [status, setStatus] = useState<string>('disconnected');
   const [qrCode, setQrCode] = useState<string | null>(null);
-  const socketRef = useRef<WebSocket | null>(null);
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const reconnectAttemptsRef = useRef(0);
-  const maxReconnectAttempts = 5;
+  const [phone, setPhone] = useState<string | null>(null);
+  const [profileName, setProfileName] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  
+  const statusPollingRef = useRef<NodeJS.Timeout | null>(null);
+  const qrPollingRef = useRef<NodeJS.Timeout | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
-  const connect = async () => {
-    if (!user || socketRef.current?.readyState === WebSocket.OPEN) return;
-
+  // Função para fazer requisição à API com timeout
+  const apiRequest = async (url: string, options?: RequestInit) => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), WHATSAPP_API_CONFIG.polling.timeoutMs);
+    
     try {
-      // Obter token JWT
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.access_token) return;
-
-      // Criar URL WebSocket com autenticação
-      const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/functions/v1/whatsapp-websocket/connect?store_id=${user.id}`;
+      const response = await fetch(url, {
+        ...options,
+        signal: controller.signal,
+        headers: {
+          ...WHATSAPP_API_CONFIG.headers,
+          ...options?.headers
+        }
+      });
       
-      const socket = new WebSocket(wsUrl);
-      socketRef.current = socket;
-
-      socket.onopen = () => {
-        console.log('WhatsApp WebSocket connected');
-        setConnected(true);
-        reconnectAttemptsRef.current = 0;
-        
-        // Enviar token de autenticação
-        socket.send(JSON.stringify({
-          type: 'auth',
-          token: session.access_token
-        }));
-      };
-
-      socket.onmessage = (event) => {
-        try {
-          const message: WebSocketMessage = JSON.parse(event.data);
-          
-          switch (message.type) {
-            case 'status':
-              setStatus(message.data);
-              setQrCode(message.data.qr);
-              break;
-            case 'qr_update':
-              setQrCode(message.data.qr);
-              break;
-            case 'connection_update':
-              setStatus(message.data);
-              break;
-            case 'pong':
-              // Keep-alive response
-              break;
-            default:
-              console.log('Unknown WebSocket message:', message);
-          }
-        } catch (error) {
-          console.error('WebSocket message parse error:', error);
-        }
-      };
-
-      socket.onclose = (event) => {
-        console.log('WhatsApp WebSocket disconnected:', event.code, event.reason);
-        setConnected(false);
-        socketRef.current = null;
-
-        // Tentar reconectar automaticamente
-        if (event.code !== 1000 && reconnectAttemptsRef.current < maxReconnectAttempts) {
-          const delay = Math.pow(2, reconnectAttemptsRef.current) * 1000; // Exponential backoff
-          reconnectAttemptsRef.current++;
-          
-          reconnectTimeoutRef.current = setTimeout(() => {
-            console.log(`Attempting to reconnect WebSocket (${reconnectAttemptsRef.current}/${maxReconnectAttempts})`);
-            connect();
-          }, delay);
-        }
-      };
-
-      socket.onerror = (error) => {
-        console.error('WebSocket error:', error);
-      };
-
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
+      return await response.json();
     } catch (error) {
-      console.error('WebSocket connection error:', error);
+      clearTimeout(timeoutId);
+      throw error;
     }
   };
 
-  const disconnect = () => {
-    if (reconnectTimeoutRef.current) {
-      clearTimeout(reconnectTimeoutRef.current);
-      reconnectTimeoutRef.current = null;
+  // Obter status atual do WhatsApp
+  const refreshStatus = async () => {
+    if (!user) return;
+    
+    try {
+      const response = await apiRequest(WHATSAPP_API_CONFIG.endpoints.status(user.id));
+      
+      if (response.success && response.data) {
+        const data: WhatsAppStatus = response.data;
+        
+        setConnected(data.connected);
+        setStatus(data.status);
+        setPhone(data.phone);
+        setProfileName(data.profileName);
+        setQrCode(data.qr);
+        
+        console.log('📱 WhatsApp status updated:', {
+          connected: data.connected,
+          status: data.status,
+          phone: data.phone
+        });
+      }
+    } catch (error) {
+      console.error('❌ Error fetching WhatsApp status:', error);
+    }
+  };
+
+  // Obter QR code atual
+  const refreshQR = async () => {
+    if (!user) return;
+    
+    try {
+      const response = await apiRequest(WHATSAPP_API_CONFIG.endpoints.qr(user.id));
+      
+      if (response.success && response.data) {
+        setQrCode(response.data.qr);
+      }
+    } catch (error) {
+      console.error('❌ Error fetching QR code:', error);
+    }
+  };
+
+  // Iniciar conexão WhatsApp
+  const connectWhatsApp = async () => {
+    if (!user) return;
+    
+    setLoading(true);
+    
+    try {
+      console.log('🚀 Starting WhatsApp connection for user:', user.id);
+      
+      const response = await apiRequest(WHATSAPP_API_CONFIG.endpoints.connect(user.id), {
+        method: 'POST',
+        body: JSON.stringify({})
+      });
+      
+      if (response.success) {
+        console.log('✅ WhatsApp connection started');
+        setStatus('connecting');
+        
+        // Iniciar polling imediato
+        await refreshStatus();
+        await refreshQR();
+      } else {
+        throw new Error(response.error || 'Failed to start connection');
+      }
+    } catch (error) {
+      console.error('❌ Error connecting WhatsApp:', error);
+      setStatus('error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Desconectar WhatsApp
+  const disconnectWhatsApp = async () => {
+    if (!user) return;
+    
+    setLoading(true);
+    
+    try {
+      console.log('🔌 Disconnecting WhatsApp for user:', user.id);
+      
+      const response = await apiRequest(WHATSAPP_API_CONFIG.endpoints.disconnect(user.id), {
+        method: 'POST',
+        body: JSON.stringify({})
+      });
+      
+      if (response.success) {
+        console.log('✅ WhatsApp disconnected');
+        setConnected(false);
+        setStatus('disconnected');
+        setPhone(null);
+        setProfileName(null);
+        setQrCode(null);
+      } else {
+        throw new Error(response.error || 'Failed to disconnect');
+      }
+    } catch (error) {
+      console.error('❌ Error disconnecting WhatsApp:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Configurar polling de status
+  const setupStatusPolling = () => {
+    if (statusPollingRef.current) {
+      clearInterval(statusPollingRef.current);
     }
     
-    if (socketRef.current) {
-      socketRef.current.close(1000, 'User disconnected');
-      socketRef.current = null;
+    // Intervalo dinâmico baseado no status
+    const interval = (status === 'connected') ? 10000 : WHATSAPP_API_CONFIG.polling.statusInterval;
+    
+    statusPollingRef.current = setInterval(() => {
+      refreshStatus();
+    }, interval);
+  };
+
+  // Configurar polling de QR (apenas quando necessário)
+  const setupQRPolling = () => {
+    if (qrPollingRef.current) {
+      clearInterval(qrPollingRef.current);
     }
     
-    setConnected(false);
-    setStatus(null);
-    setQrCode(null);
-    reconnectAttemptsRef.current = 0;
-  };
-
-  const sendPing = () => {
-    if (socketRef.current?.readyState === WebSocket.OPEN) {
-      socketRef.current.send(JSON.stringify({ type: 'ping' }));
+    // Polling de QR apenas quando status é 'qr' ou 'connecting'
+    if (status === 'qr' || status === 'connecting') {
+      qrPollingRef.current = setInterval(() => {
+        refreshQR();
+      }, WHATSAPP_API_CONFIG.polling.qrInterval);
     }
   };
 
-  // Keep-alive ping every 30 segundos
+  // Limpar todos os polling
+  const clearPolling = () => {
+    if (statusPollingRef.current) {
+      clearInterval(statusPollingRef.current);
+      statusPollingRef.current = null;
+    }
+    
+    if (qrPollingRef.current) {
+      clearInterval(qrPollingRef.current);
+      qrPollingRef.current = null;
+    }
+    
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+  };
+
+  // Efeito para configurar polling baseado no status
   useEffect(() => {
-    const pingInterval = setInterval(() => {
-      sendPing();
-    }, 30000);
+    if (!user) return;
+    
+    setupStatusPolling();
+    setupQRPolling();
+    
+    return () => {
+      clearPolling();
+    };
+  }, [status, user]);
 
-    return () => clearInterval(pingInterval);
-  }, []);
-
-  // Conectar quando o usuário estiver disponível
+  // Efeito para carregar status inicial quando usuário estiver disponível
   useEffect(() => {
     if (user) {
-      connect();
+      refreshStatus();
     } else {
-      disconnect();
+      // Resetar estado quando não há usuário
+      setConnected(false);
+      setStatus('disconnected');
+      setPhone(null);
+      setProfileName(null);
+      setQrCode(null);
+      setLoading(false);
+      clearPolling();
     }
-
-    return () => {
-      disconnect();
-    };
   }, [user]);
 
-  // Limpar reconexão ao desmontar
+  // Limpar polling ao desmontar
   useEffect(() => {
     return () => {
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
-      }
+      clearPolling();
     };
   }, []);
 
@@ -153,8 +242,11 @@ export function useWhatsAppWebSocket() {
     connected,
     status,
     qrCode,
-    connect,
-    disconnect,
-    sendPing
+    phone,
+    profileName,
+    loading,
+    connectWhatsApp,
+    disconnectWhatsApp,
+    refreshStatus
   };
 }
