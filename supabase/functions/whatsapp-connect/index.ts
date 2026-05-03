@@ -116,14 +116,15 @@ async function handleConnect(req: Request, supabase: any, userId: string) {
     const { data: existingSession } = await supabase
       .from('whatsapp_sessions')
       .select('*')
-      .eq('store_id', userId)
+      .eq('user_id', userId)
+      .eq('session_name', 'default')
       .single()
 
     if (existingSession && existingSession.status === 'connected') {
       return new Response(
         JSON.stringify({ 
           connected: true, 
-          phone: existingSession.phone,
+          phone: existingSession.phone_number,
           profileName: existingSession.profile_name 
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -135,7 +136,7 @@ async function handleConnect(req: Request, supabase: any, userId: string) {
     const authPath = `./auth/${userId}_${sessionId}`
 
     const sessionData: Partial<WhatsAppSession> = {
-      store_id: userId,
+      user_id: userId,
       session_name: 'default',
       status: 'connecting',
       auth_path: authPath,
@@ -235,7 +236,7 @@ async function startWhatsAppSession(session: WhatsAppSession, supabase: any) {
           .from('whatsapp_sessions')
           .update({
             status: 'connected',
-            phone: authInfo.id?.replace('@s.whatsapp.net', '') || null,
+            phone_number: authInfo.id?.replace('@s.whatsapp.net', '') || null,
             profile_name: authInfo.name || null,
             qr_code: null,
             updated_at: new Date().toISOString()
@@ -330,7 +331,7 @@ async function handleIncomingMessage(message: Message, userId: string, supabase:
     const { data: autoMessage, error: configError } = await supabase
       .from('whatsapp_auto_messages')
       .select('*')
-      .eq('store_id', userId)
+      .eq('user_id', userId)
       .eq('is_active', true)
       .single()
 
@@ -340,7 +341,7 @@ async function handleIncomingMessage(message: Message, userId: string, supabase:
     }
 
     console.log('✅ Auto message config found:', {
-      messageText: autoMessage.message_text.substring(0, 50) + '...',
+      messageText: autoMessage.message.substring(0, 50) + '...',
       cooldownHours: autoMessage.cooldown_hours,
       isActive: autoMessage.is_active
     })
@@ -350,7 +351,7 @@ async function handleIncomingMessage(message: Message, userId: string, supabase:
     const { data: lastCooldown, error: cooldownError } = await supabase
       .from('whatsapp_message_logs')
       .select('last_sent_at')
-      .eq('store_id', userId)
+      .eq('user_id', userId)
       .eq('customer_number', customerNumber)
       .single()
 
@@ -367,11 +368,11 @@ async function handleIncomingMessage(message: Message, userId: string, supabase:
 
     // Enviar resposta automática
     console.log('📤 Sending auto reply to:', customerNumber)
-    console.log('📝 Message content:', autoMessage.message_text)
+    console.log('📝 Message content:', autoMessage.message)
     
     try {
       await sock.sendMessage(customerNumber + '@s.whatsapp.net', {
-        text: autoMessage.message_text
+        text: autoMessage.message
       })
       console.log('✅ Message sent successfully!')
     } catch (sendError) {
@@ -385,7 +386,7 @@ async function handleIncomingMessage(message: Message, userId: string, supabase:
     const { error: receivedLogError } = await supabase
       .from('whatsapp_message_logs')
       .insert({
-        store_id: userId,
+        user_id: userId,
         customer_number: customerNumber,
         customer_name: null,
         message_received: messageContent,
@@ -398,15 +399,15 @@ async function handleIncomingMessage(message: Message, userId: string, supabase:
     const { error: sentLogError } = await supabase
       .from('whatsapp_message_logs')
       .upsert({
-        store_id: userId,
+        user_id: userId,
         customer_number: customerNumber,
         customer_name: null,
         message_received: messageContent,
-        message_sent: autoMessage.message_text,
+        message_sent: autoMessage.message,
         last_sent_at: new Date().toISOString(),
         message_count: 1
       }, {
-        onConflict: 'store_id,customer_number'
+        onConflict: 'user_id,customer_number'
       })
 
     // Cooldown já atualizado no upsert anterior (last_sent_at)
@@ -448,6 +449,7 @@ async function handleDisconnect(req: Request, supabase: any, userId: string) {
         last_disconnected_at: new Date().toISOString()
       })
       .eq('user_id', userId)
+      .eq('session_name', 'default')
 
     return new Response(
       JSON.stringify({ success: true }),
@@ -468,6 +470,7 @@ async function handleStatus(req: Request, supabase: any, userId: string) {
       .from('whatsapp_sessions')
       .select('*')
       .eq('user_id', userId)
+      .eq('session_name', 'default')
       .single()
 
     if (!session) {
@@ -490,7 +493,7 @@ async function handleStatus(req: Request, supabase: any, userId: string) {
       JSON.stringify({
         connected: session.status === 'connected',
         status: session.status,
-        phone: session.phone,
+        phone: session.phone_number,
         profileName: session.profile_name,
         qr: qrCode
       }),
@@ -510,12 +513,12 @@ async function handleSaveConfig(req: Request, supabase: any, userId: string) {
     const { message, cooldown_hours, enabled } = await req.json()
 
     const { data, error } = await supabase
-      .from('whatsapp_auto_responder')
+      .from('whatsapp_auto_messages')
       .upsert({
         user_id: userId,
         message,
         cooldown_hours: cooldown_hours || 24,
-        enabled: enabled !== false
+        is_active: enabled !== false
       }, {
         onConflict: 'user_id'
       })
@@ -540,7 +543,7 @@ async function handleSaveConfig(req: Request, supabase: any, userId: string) {
 async function handleGetConfig(req: Request, supabase: any, userId: string) {
   try {
     const { data: autoMessage } = await supabase
-      .from('whatsapp_auto_responder')
+      .from('whatsapp_auto_messages')
       .select('*')
       .eq('user_id', userId)
       .single()
