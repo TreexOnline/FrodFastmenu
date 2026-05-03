@@ -6,7 +6,7 @@ const isDevelopment = import.meta.env.DEV || import.meta.env.MODE === 'developme
 
 // URL base dinâmica baseada no ambiente
 const baseURL = import.meta.env.VITE_WHATSAPP_API_URL || 
-               (isDevelopment ? "http://localhost:3001" : "https://api.whatsapp-engine.com");
+               (isDevelopment ? "http://localhost:3001" : "http://localhost:3001");
 
 export const WHATSAPP_API_CONFIG = {
   // URL base do WhatsApp Engine

@@ -6,6 +6,11 @@
     }
   ],
   "env": {
-    "VITE_WHATSAPP_API_URL": "http://SEU-SERVIDOR-IP:3001"
+    "VITE_WHATSAPP_API_URL": "https://api.whatsapp-engine.com"
+  },
+  "build": {
+    "env": {
+      "VITE_WHATSAPP_API_URL": "https://api.whatsapp-engine.com"
+    }
   }
 }
