@@ -159,12 +159,13 @@ class WhatsAppEngineServer {
         logger.warn('⚠️ Supabase connection failed, but continuing startup:', error.message);
       }
       
-      // Iniciar servidor
-      this.server = this.app.listen(this.port, () => {
+      // Iniciar servidor com bind externo
+      this.server = this.app.listen(this.port, '0.0.0.0', () => {
         logger.info(`✅ WhatsApp Engine started successfully on port ${this.port}`);
-        logger.info(`📡 API available at: http://localhost:${this.port}/api/whatsapp`);
-        logger.info(`🏥 Health check at: http://localhost:${this.port}/health`);
+        logger.info(`📡 API available at: http://0.0.0.0:${this.port}/api/whatsapp`);
+        logger.info(`🏥 Health check at: http://0.0.0.0:${this.port}/health`);
         logger.info(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
+        logger.info(`🔗 External access: http://${require('os').networkInterfaces().eth0?.[0]?.address || 'localhost'}:${this.port}/api/whatsapp`);
       });
 
       // Graceful shutdown
