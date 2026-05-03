@@ -224,8 +224,7 @@ async function startWhatsAppSession(session: WhatsAppSession, supabase: any) {
           })
           .eq('id', session.id)
 
-        // Broadcast via WebSocket
-        await broadcastToWebSocket(session.user_id, 'qr_update', { qr: qrDataUrl })
+        // WebSocket broadcast desativado - usando polling no frontend
       }
 
       if (update.connection === 'open') {
@@ -246,14 +245,7 @@ async function startWhatsAppSession(session: WhatsAppSession, supabase: any) {
         // Limpar QR code
         qrCodes.delete(session.user_id)
 
-        // Broadcast via WebSocket
-        await broadcastToWebSocket(session.user_id, 'connection_update', {
-          connected: true,
-          status: 'connected',
-          phone: authInfo.id?.replace('@s.whatsapp.net', '') || null,
-          profileName: authInfo.name || null,
-          qr: null
-        })
+        // WebSocket broadcast desativado - usando polling no frontend
       }
 
       if (update.connection === 'close') {
@@ -266,14 +258,7 @@ async function startWhatsAppSession(session: WhatsAppSession, supabase: any) {
           })
           .eq('id', session.id)
 
-        // Broadcast via WebSocket
-        await broadcastToWebSocket(session.user_id, 'connection_update', {
-          connected: false,
-          status: 'disconnected',
-          phone: null,
-          profileName: null,
-          qr: null
-        })
+        // WebSocket broadcast desativado - usando polling no frontend
       }
     })
 
@@ -561,18 +546,3 @@ async function handleGetConfig(req: Request, supabase: any, userId: string) {
   }
 }
 
-// Função para broadcast via WebSocket
-async function broadcastToWebSocket(userId: string, type: string, data: any) {
-  try {
-    // Nota: Esta função não será usada no novo sistema
-    // Mantida apenas para compatibilidade com código antigo
-    console.log('📡 WebSocket broadcast (desativado):', { userId, type, data })
-    
-    // Comentado porque o whatsapp-websocket foi desativado
-    // await supabase.functions.invoke('whatsapp-websocket/broadcast', {
-    //   body: { user_id: userId, type, data }
-    // })
-  } catch (error) {
-    console.error('WebSocket broadcast error:', error)
-  }
-}

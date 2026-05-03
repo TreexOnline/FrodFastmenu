@@ -19,7 +19,9 @@ class SessionManager {
   constructor() {
     this.sessions = new Map(); // userId -> session data
     this.supabaseService = new SupabaseService();
-    this.authInfoPath = path.join(__dirname, 'auth_info');
+    
+    // Para Railway: usar pasta temporária ou variável de ambiente
+    this.authInfoPath = process.env.AUTH_DATA_PATH || path.join(__dirname, 'auth_info');
     
     // Garantir que pasta auth_info exista
     this.ensureAuthFolder();
@@ -291,8 +293,47 @@ class SessionManager {
     }
   }
 
-  // Limpeza de sessões desconectadas antigas
-  async cleanupOldSessions() {
+  async cleanup() {
+    try {
+      logger.info('Starting session cleanup...');
+      
+      // Limpar sessões desconectadas
+      for (const [userId, session] of this.sessions) {
+        if (session.status === 'disconnected' || session.status === 'error') {
+          this.sessions.delete(userId);
+          logger.info(`Cleaned up session for user: ${userId}`);
+        }
+      }
+      
+      // Limpar pastas de autenticação antigas
+      await this.cleanupOldAuthFolders();
+      
+      logger.info('Session cleanup completed');
+    } catch (error) {
+      logger.error('Failed to cleanup sessions:', error);
+    }
+  }
+
+  getSessionCount() {
+    return this.sessions.size;
+  }
+
+  async reconnectDisconnectedSessions() {
+    try {
+      logger.info('Checking disconnected sessions for reconnection...');
+      
+      for (const [userId, session] of this.sessions) {
+        if (session.status === 'disconnected' && session.reconnectAttempts < session.maxReconnectAttempts) {
+          logger.info(`Attempting to reconnect session for user: ${userId}`);
+          await this.startSession(userId);
+        }
+      }
+    } catch (error) {
+      logger.error('Failed to reconnect sessions:', error);
+    }
+  }
+
+  async cleanupOldAuthFolders() {
     try {
       const authFolder = this.authInfoPath;
       const folders = await fs.readdir(authFolder);
