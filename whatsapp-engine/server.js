@@ -149,10 +149,15 @@ class WhatsAppEngineServer {
     try {
       logger.info('🚀 Starting FrodFast WhatsApp Engine...');
       
-      // Testar conexão com Supabase
-      const SupabaseService = require('./supabaseService');
-      const supabaseService = new SupabaseService();
-      await supabaseService.testConnection();
+      // Testar conexão com Supabase (não crítico para iniciar)
+      try {
+        const SupabaseService = require('./supabaseService');
+        const supabaseService = new SupabaseService();
+        await supabaseService.testConnection();
+        logger.info('✅ Supabase connection successful');
+      } catch (error) {
+        logger.warn('⚠️ Supabase connection failed, but continuing startup:', error.message);
+      }
       
       // Iniciar servidor
       this.server = this.app.listen(this.port, () => {

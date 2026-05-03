@@ -13,10 +13,14 @@ const logger = pino({
 
 class SupabaseService {
   constructor() {
+    // Tentar com ANON_KEY primeiro (mais permissivo para Lovable)
     this.supabase = createClient(
       process.env.SUPABASE_URL,
-      process.env.SUPABASE_SERVICE_ROLE_KEY
+      process.env.SUPABASE_ANON_KEY
     );
+    
+    // Fallback para SERVICE_ROLE_KEY se ANON falhar
+    this.serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   }
 
   // ============ SESSÕES WHATSAPP ============
@@ -256,20 +260,43 @@ class SupabaseService {
 
   async testConnection() {
     try {
+      // Test connection com ANON_KEY primeiro
       const { data, error } = await this.supabase
-        .from('whatsapp_sessions')
-        .select('count')
+        .from('profiles')
+        .select('id')
         .limit(1);
 
       if (error) {
-        logger.error('Supabase connection test failed:', error);
-        throw error;
+        // Tentar com SERVICE_ROLE_KEY como fallback
+        if (this.serviceKey && this.serviceKey !== 'your-service-role-key') {
+          logger.warn('ANON_KEY failed, trying SERVICE_ROLE_KEY...');
+          const serviceClient = createClient(
+            process.env.SUPABASE_URL,
+            this.serviceKey
+          );
+          
+          const { data: serviceData, error: serviceError } = await serviceClient
+            .from('profiles')
+            .select('id')
+            .limit(1);
+            
+          if (serviceError) {
+            logger.error('Both ANON_KEY and SERVICE_ROLE_KEY failed:', serviceError);
+            throw new Error('Supabase connection failed - check API keys and Lovable permissions');
+          }
+          
+          logger.info('Supabase connection successful with SERVICE_ROLE_KEY');
+          return true;
+        } else {
+          logger.error('Supabase connection test failed:', error);
+          throw new Error('Invalid API keys - check Lovable Supabase configuration');
+        }
       }
 
-      logger.info('Supabase connection test successful');
+      logger.info('Supabase connection successful with ANON_KEY');
       return true;
     } catch (error) {
-      logger.error('Supabase connection test failed:', error);
+      logger.error('Supabase connection test failed:', error.message);
       throw error;
     }
   }

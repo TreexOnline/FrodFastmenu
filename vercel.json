@@ -4,5 +4,8 @@
       "source": "/((?!api/).*)",
       "destination": "/index.html"
     }
-  ]
+  ],
+  "env": {
+    "VITE_WHATSAPP_API_URL": "http://SEU-SERVIDOR-IP:3001"
+  }
 }

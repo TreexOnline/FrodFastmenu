@@ -1,5 +1,4 @@
 const { useMultiFileAuthState, makeWASocket, DisconnectReason } = require('@whiskeysockets/baileys');
-const { Boom } = require('@hapi/boom');
 const pino = require('pino');
 const qrcode = require('qrcode');
 const fs = require('fs-extra');
@@ -153,7 +152,7 @@ class SessionManager {
 
         if (update.connection === 'close') {
           // Conexão fechada
-          const shouldReconnect = (update.lastDisconnect?.error as Boom)?.output?.statusCode !== DisconnectReason.loggedOut;
+          const shouldReconnect = update.lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
 
           sessionData.status = 'disconnected';
 
