@@ -88,7 +88,7 @@ export default function WhatsAppPage() {
   
   // Estados para integração com WhatsApp Engine
   const [connectionState, setConnectionState] = useState({
-    status: 'disconnected',
+    status: 'idle',
     qr: null as string | null,
     phone: null as string | null,
     profileName: null as string | null
@@ -182,11 +182,6 @@ export default function WhatsAppPage() {
 
   useEffect(() => {
     loadAutoMessage();
-    
-    // Iniciar polling de status quando usuário carregar
-    if (user) {
-      startStatusPolling(user.id);
-    }
     
     // Limpar polling ao desmontar
     return () => {
@@ -469,7 +464,7 @@ export default function WhatsAppPage() {
                 ) : (
                   <Badge variant="outline" className="text-muted-foreground">
                     <XCircle className="w-3.5 h-3.5 mr-1" />
-                    Desconectado
+                    {connectionState.status === 'idle' ? 'Inativo' : 'Desconectado'}
                   </Badge>
                 )}
               </div>
@@ -495,7 +490,7 @@ export default function WhatsAppPage() {
               )}
 
               <div className="flex flex-wrap gap-2">
-                {connectionState.status !== 'connected' && (
+                {connectionState.status !== 'connected' && connectionState.status !== 'connecting' && (
                   <Button onClick={handleConnect} disabled={connecting}>
                     {connecting ? (
                       <Loader2 className="w-4 h-4 mr-2 animate-spin" />
