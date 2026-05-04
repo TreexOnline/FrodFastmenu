@@ -147,8 +147,8 @@ export default function WhatsAppPage() {
       .maybeSingle();
     
     if (data) {
-      setAutoMessage(data as AutoMessage);
-      setMessageText((data as any).message);
+      setAutoMessage(data as unknown as AutoMessage);
+      setMessageText((data as any).message_text || '');
       setCooldownHours((data as any).cooldown_hours.toString());
       setIsActive((data as any).enabled);
     }
@@ -672,12 +672,12 @@ export default function WhatsAppPage() {
             <div className="rounded-lg border p-4">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-sm font-medium">Status do Sistema</span>
-                <Badge variant={connected ? "default" : "secondary"}>
-                  {connected ? "🟢 Conectado" : "🔴 Desconectado"}
+                <Badge variant={connectionState.status === 'connected' ? "default" : "secondary"}>
+                  {connectionState.status === 'connected' ? "🟢 Conectado" : "🔴 Desconectado"}
                 </Badge>
               </div>
               <div className="space-y-1 text-sm text-muted-foreground">
-                <p>• Backend: {wsConnected ? "🟢 Online" : "🔴 Offline"}</p>
+                <p>• Backend: {connectionState.status !== 'disconnected' ? "🟢 Online" : "🔴 Offline"}</p>
                 <p>• Auto resposta: {isActive ? "🟢 Ativa" : "🔴 Inativa"}</p>
                 <p>• Mensagem configurada: {messageText.trim() ? "🟢 Sim" : "🔴 Não"}</p>
               </div>
