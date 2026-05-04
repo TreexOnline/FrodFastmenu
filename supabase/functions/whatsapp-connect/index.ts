@@ -495,15 +495,15 @@ async function handleStatus(req: Request, supabase: any, userId: string) {
 
 async function handleSaveConfig(req: Request, supabase: any, userId: string) {
   try {
-    const { message, cooldown_hours, enabled } = await req.json()
+    const { message_template, cooldown_minutes, is_active } = await req.json()
 
     const { data, error } = await supabase
       .from('whatsapp_auto_messages')
       .upsert({
         user_id: userId,
-        message,
-        cooldown_hours: cooldown_hours || 24,
-        is_active: enabled !== false
+        message_template,
+        cooldown_minutes: cooldown_minutes || 1440,
+        is_active: is_active !== false
       }, {
         onConflict: 'user_id'
       })

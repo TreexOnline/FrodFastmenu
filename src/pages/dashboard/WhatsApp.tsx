@@ -167,16 +167,16 @@ export default function WhatsAppPage() {
   const loadAutoMessage = async () => {
     if (!user) return;
     const { data } = await supabase
-      .from("whatsapp_auto_responder" as any)
+      .from("whatsapp_auto_messages" as any)
       .select("*")
       .eq("user_id", user.id)
       .maybeSingle();
     
     if (data) {
       setAutoMessage(data as unknown as AutoMessage);
-      setMessageText((data as any).message_text || '');
-      setCooldownHours((data as any).cooldown_hours.toString());
-      setIsActive((data as any).enabled);
+      setMessageText((data as any).message_template || '');
+      setCooldownHours(Math.floor(((data as any).cooldown_minutes || 1440) / 60).toString());
+      setIsActive((data as any).is_active);
     }
   };
 
@@ -202,22 +202,21 @@ export default function WhatsAppPage() {
     if (!user) return;
     
     const messageChannel = supabase
-      .channel("whatsapp_auto_responder")
+      .channel("whatsapp_auto_messages")
       .on(
         "postgres_changes",
         {
           event: "*",
           schema: "public",
-          table: "whatsapp_auto_responder" as any,
+          table: "whatsapp_auto_messages" as any,
           filter: `user_id=eq.${user.id}`,
         },
         (payload) => {
           if (payload.new) {
-            const data = payload.new as any;
-            setAutoMessage(data as AutoMessage);
-            setMessageText(data.message);
-            setCooldownHours(data.cooldown_hours.toString());
-            setIsActive(data.enabled);
+            setAutoMessage(payload.new as AutoMessage);
+            setMessageText((payload.new as any).message_template || '');
+            setCooldownHours(Math.floor(((payload.new as any).cooldown_minutes || 1440) / 60).toString());
+            setIsActive((payload.new as any).is_active);
           }
         },
       )
@@ -285,9 +284,9 @@ export default function WhatsAppPage() {
       await supabase.functions.invoke("whatsapp-connect/save-config", {
         body: {
           user_id: user?.id,
-          message: messageText,
-          cooldown_hours: parseInt(cooldownHours),
-          enabled: isActive
+          message_template: messageText,
+          cooldown_minutes: parseInt(cooldownHours) * 60,
+          is_active: isActive
         }
       });
       
