@@ -1,0 +1,588 @@
+import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { toast } from "sonner";
+import { UserPlus, Mail, Lock, Store, CreditCard, Shield, Trash2 } from "lucide-react";
+
+interface NewUser {
+  email: string;
+  password: string;
+  fullName: string;
+  restaurantName: string;
+  phone: string;
+  plan: string;
+  whatsappEnabled: boolean;
+}
+
+interface ExistingUser {
+  id: string;
+  email: string;
+  full_name: string;
+  restaurant_name: string;
+  current_plan: string;
+  plan_active: boolean;
+  whatsapp_addon_active: boolean;
+  created_at: string;
+  role: string;
+}
+
+export default function UserManagement() {
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const [loading, setLoading] = useState(false);
+  const [users, setUsers] = useState<ExistingUser[]>([]);
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [newUser, setNewUser] = useState<NewUser>({
+    email: "",
+    password: "",
+    fullName: "",
+    restaurantName: "",
+    phone: "",
+    plan: "free",
+    whatsappEnabled: true,
+  });
+
+  // Verificar se usuário atual é admin
+  useEffect(() => {
+    if (!user) return;
+    
+    const checkAdmin = async () => {
+      const { data } = await supabase
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", user.id)
+        .eq("role", "admin")
+        .maybeSingle();
+      
+      if (!data) {
+        toast.error("Acesso restrito ao administrador");
+        navigate("/dashboard");
+        return;
+      }
+    };
+    
+    checkAdmin();
+  }, [user, navigate]);
+
+  // Carregar usuários existentes
+  const loadUsers = async () => {
+    if (!user) return;
+    
+    try {
+      const { data, error } = await supabase
+        .from("admin_users_view")
+        .select("*")
+        .order("created_at", { ascending: false });
+      
+      if (error) {
+        toast.error("Erro ao carregar usuários");
+        console.error("Load users error:", error);
+        return;
+      }
+      
+      setUsers(data as ExistingUser[]);
+    } catch (error) {
+      toast.error("Erro ao carregar usuários");
+      console.error("Load users error:", error);
+    }
+  };
+
+  useEffect(() => {
+    loadUsers();
+  }, [user]);
+
+  const handleCreateUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!user) return;
+    
+    // Validações
+    if (!newUser.email || !newUser.password || !newUser.fullName || !newUser.restaurantName) {
+      toast.error("Preencha todos os campos obrigatórios");
+      return;
+    }
+    
+    if (newUser.password.length < 6) {
+      toast.error("A senha deve ter no mínimo 6 caracteres");
+      return;
+    }
+    
+    setLoading(true);
+    
+    try {
+      // 1. Criar usuário no Supabase Auth
+      const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+        email: newUser.email,
+        password: newUser.password,
+        email_confirm: true,
+      });
+      
+      if (authError) {
+        toast.error("Erro ao criar usuário: " + authError.message);
+        setLoading(false);
+        return;
+      }
+      
+      // 2. Criar perfil
+      const { error: profileError } = await supabase
+        .from("profiles")
+        .insert({
+          id: authData.user.id,
+          email: newUser.email,
+          full_name: newUser.fullName,
+          restaurant_name: newUser.restaurantName,
+          whatsapp_number: newUser.phone.startsWith("+") ? newUser.phone : `+55${newUser.phone}`,
+          current_plan: newUser.plan,
+          plan_active: newUser.plan !== "free",
+          whatsapp_addon_active: newUser.whatsappEnabled,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        });
+      
+      if (profileError) {
+        toast.error("Erro ao criar perfil: " + profileError.message);
+        setLoading(false);
+        return;
+      }
+      
+      // 3. Criar loja
+      const { error: storeError } = await supabase
+        .from("stores")
+        .insert({
+          owner_id: authData.user.id,
+          name: newUser.restaurantName,
+          phone: newUser.phone.startsWith("+") ? newUser.phone : `+55${newUser.phone}`,
+          email: newUser.email,
+          whatsapp_enabled: newUser.whatsappEnabled,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        });
+      
+      if (storeError) {
+        toast.error("Erro ao criar loja: " + storeError.message);
+        setLoading(false);
+        return;
+      }
+      
+      // 4. Criar role de usuário
+      const { error: roleError } = await supabase
+        .from("user_roles")
+        .insert({
+          user_id: authData.user.id,
+          role: "user",
+          permissions: {
+            manage_stores: true,
+            manage_categories: true,
+            manage_menu_items: true,
+            manage_orders: true,
+            manage_inventory: true,
+            manage_whatsapp: newUser.whatsappEnabled,
+            manage_settings: true,
+            view_reports: true,
+          },
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        });
+      
+      if (roleError) {
+        toast.error("Erro ao criar role: " + roleError.message);
+        setLoading(false);
+        return;
+      }
+      
+      // 5. Criar menu inicial
+      const { data: menuData, error: menuError } = await supabase
+        .from("menus")
+        .insert({
+          user_id: authData.user.id,
+          name: "Cardápio Principal",
+          is_active: true,
+          slug: `cardapio-${newUser.restaurantName.toLowerCase().replace(/\s+/g, "-")}`,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .select()
+        .single();
+      
+      if (menuError) {
+        toast.error("Erro ao criar menu: " + menuError.message);
+        setLoading(false);
+        return;
+      }
+      
+      // 6. Criar configurações do menu
+      await supabase
+        .from("menu_settings")
+        .insert({
+          menu_id: menuData.id,
+          user_id: authData.user.id,
+          auto_print: false,
+          print_split_by_category: false,
+          display_name: "Cardápio Principal",
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        });
+      
+      toast.success(`Usuário ${newUser.email} criado com sucesso!`);
+      
+      // Resetar formulário
+      setNewUser({
+        email: "",
+        password: "",
+        fullName: "",
+        restaurantName: "",
+        phone: "",
+        plan: "free",
+        whatsappEnabled: true,
+      });
+      setShowCreateForm(false);
+      
+      // Recarregar lista de usuários
+      loadUsers();
+      
+    } catch (error: any) {
+      toast.error("Erro ao criar usuário: " + error.message);
+      console.error("Create user error:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteUser = async (userId: string, userEmail: string) => {
+    if (!confirm(`Tem certeza que deseja excluir o usuário ${userEmail}?`)) {
+      return;
+    }
+    
+    try {
+      // Excluir usuário (cascade deve remover dados relacionados)
+      const { error } = await supabase.auth.admin.deleteUser(userId);
+      
+      if (error) {
+        toast.error("Erro ao excluir usuário: " + error.message);
+        return;
+      }
+      
+      toast.success("Usuário excluído com sucesso");
+      loadUsers();
+      
+    } catch (error: any) {
+      toast.error("Erro ao excluir usuário: " + error.message);
+      console.error("Delete user error:", error);
+    }
+  };
+
+  const handleUpdatePlan = async (userId: string, plan: string) => {
+    try {
+      const { error } = await supabase
+        .from("profiles")
+        .update({
+          current_plan: plan,
+          plan_active: plan !== "free",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", userId);
+      
+      if (error) {
+        toast.error("Erro ao atualizar plano: " + error.message);
+        return;
+      }
+      
+      toast.success(`Plano atualizado para ${plan}`);
+      loadUsers();
+      
+    } catch (error: any) {
+      toast.error("Erro ao atualizar plano: " + error.message);
+    }
+  };
+
+  const handleToggleWhatsApp = async (userId: string, enabled: boolean) => {
+    try {
+      const { error } = await supabase
+        .from("profiles")
+        .update({
+          whatsapp_addon_active: enabled,
+          whatsapp_addon_expires_at: enabled ? "2099-12-31" : null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", userId);
+      
+      if (error) {
+        toast.error("Erro ao atualizar WhatsApp: " + error.message);
+        return;
+      }
+      
+      toast.success(`WhatsApp ${enabled ? "ativado" : "desativado"}`);
+      loadUsers();
+      
+    } catch (error: any) {
+      toast.error("Erro ao atualizar WhatsApp: " + error.message);
+    }
+  };
+
+  return (
+    <div className="p-6 max-w-6xl mx-auto">
+      <div className="mb-6">
+        <h1 className="text-3xl font-bold mb-2">Gerenciamento de Usuários</h1>
+        <p className="text-muted-foreground">
+          Crie e gerencie usuários do sistema FrodFastmenu
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Formulário de Criação */}
+        <Card className="lg:col-span-1">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <UserPlus className="h-5 w-5" />
+              Criar Novo Usuário
+            </CardTitle>
+            <CardDescription>
+              Preencha os dados para criar um novo restaurante
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {!showCreateForm ? (
+              <div className="space-y-4">
+                <div>
+                  <Label htmlFor="email">Email (Gmail)</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    placeholder="usuario@gmail.com"
+                    value={newUser.email}
+                    onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
+                    required
+                  />
+                </div>
+                
+                <div>
+                  <Label htmlFor="password">Senha Inicial</Label>
+                  <Input
+                    id="password"
+                    type="password"
+                    placeholder="Mínimo 6 caracteres"
+                    value={newUser.password}
+                    onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
+                    required
+                    minLength={6}
+                  />
+                </div>
+                
+                <div>
+                  <Label htmlFor="fullName">Nome do Responsável</Label>
+                  <Input
+                    id="fullName"
+                    placeholder="Nome completo"
+                    value={newUser.fullName}
+                    onChange={(e) => setNewUser({ ...newUser, fullName: e.target.value })}
+                    required
+                  />
+                </div>
+                
+                <div>
+                  <Label htmlFor="restaurantName">Nome do Restaurante</Label>
+                  <Input
+                    id="restaurantName"
+                    placeholder="Nome do restaurante"
+                    value={newUser.restaurantName}
+                    onChange={(e) => setNewUser({ ...newUser, restaurantName: e.target.value })}
+                    required
+                  />
+                </div>
+                
+                <div>
+                  <Label htmlFor="phone">Telefone (com DDD)</Label>
+                  <Input
+                    id="phone"
+                    placeholder="1899700"
+                    value={newUser.phone}
+                    onChange={(e) => setNewUser({ ...newUser, phone: e.target.value })}
+                    required
+                  />
+                  <p className="text-sm text-muted-foreground mt-1">
+                    DDI 55 será adicionado automaticamente
+                  </p>
+                </div>
+                
+                <div>
+                  <Label htmlFor="plan">Plano</Label>
+                  <Select value={newUser.plan} onValueChange={(value) => setNewUser({ ...newUser, plan: value })}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione o plano" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="free">Gratuito</SelectItem>
+                      <SelectItem value="basic">Básico</SelectItem>
+                      <SelectItem value="premium">Premium</SelectItem>
+                      <SelectItem value="enterprise">Enterprise</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id="whatsapp"
+                    checked={newUser.whatsappEnabled}
+                    onChange={(e) => setNewUser({ ...newUser, whatsappEnabled: e.target.checked })}
+                  />
+                  <Label htmlFor="whatsapp">Habilitar WhatsApp</Label>
+                </div>
+                
+                <div className="flex space-x-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setShowCreateForm(false)}
+                    disabled={loading}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button
+                    type="submit"
+                    onClick={handleCreateUser}
+                    disabled={loading}
+                  >
+                    {loading ? "Criando..." : "Criar Usuário"}
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="text-center">
+                <UserPlus className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+                <Button
+                  onClick={() => setShowCreateForm(true)}
+                  className="w-full"
+                >
+                  Criar Novo Usuário
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Lista de Usuários Existentes */}
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Shield className="h-5 w-5" />
+              Usuários Cadastrados
+            </CardTitle>
+            <CardDescription>
+              Gerencie usuários existentes, planos e permissões
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {users.length === 0 ? (
+              <div className="text-center py-8">
+                <Store className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+                <p className="text-muted-foreground">
+                  Nenhum usuário cadastrado ainda
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {users.map((user) => (
+                  <div key={user.id} className="border rounded-lg p-4">
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-2">
+                          <h3 className="font-semibold">{user.restaurant_name}</h3>
+                          <span className={`px-2 py-1 rounded text-xs ${
+                            user.role === 'admin' 
+                              ? 'bg-purple-100 text-purple-800' 
+                              : 'bg-blue-100 text-blue-800'
+                          }`}>
+                            {user.role === 'admin' ? 'Admin' : 'Usuário'}
+                          </span>
+                        </div>
+                        
+                        <div className="grid grid-cols-2 gap-4 text-sm">
+                          <div>
+                            <span className="text-muted-foreground">Email:</span>
+                            <p className="font-medium">{user.email}</p>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">Responsável:</span>
+                            <p className="font-medium">{user.full_name}</p>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">Plano:</span>
+                            <p className="font-medium">{user.current_plan}</p>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">Criado em:</span>
+                            <p className="font-medium">
+                              {new Date(user.created_at).toLocaleDateString('pt-BR')}
+                            </p>
+                          </div>
+                        </div>
+                        
+                        <div className="flex flex-wrap gap-2 mt-3">
+                          <span className={`px-2 py-1 rounded text-xs ${
+                            user.plan_active 
+                              ? 'bg-green-100 text-green-800' 
+                              : 'bg-gray-100 text-gray-800'
+                          }`}>
+                            {user.plan_active ? 'Ativo' : 'Inativo'}
+                          </span>
+                          
+                          <span className={`px-2 py-1 rounded text-xs ${
+                            user.whatsapp_addon_active 
+                              ? 'bg-green-100 text-green-800' 
+                              : 'bg-gray-100 text-gray-800'
+                          }`}>
+                            WhatsApp: {user.whatsapp_addon_active ? 'Ativo' : 'Inativo'}
+                          </span>
+                        </div>
+                      </div>
+                      
+                      <div className="flex flex-col gap-2 ml-4">
+                        <Select
+                          value={user.current_plan}
+                          onValueChange={(value) => handleUpdatePlan(user.id, value)}
+                        >
+                          <SelectTrigger className="w-32">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="free">Gratuito</SelectItem>
+                            <SelectItem value="basic">Básico</SelectItem>
+                            <SelectItem value="premium">Premium</SelectItem>
+                            <SelectItem value="enterprise">Enterprise</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        
+                        <Button
+                          variant={user.whatsapp_addon_active ? "destructive" : "default"}
+                          size="sm"
+                          onClick={() => handleToggleWhatsApp(user.id, !user.whatsapp_addon_active)}
+                        >
+                          {user.whatsapp_addon_active ? "Desativar" : "Ativar"} WhatsApp
+                        </Button>
+                        
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => handleDeleteUser(user.id, user.email)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}

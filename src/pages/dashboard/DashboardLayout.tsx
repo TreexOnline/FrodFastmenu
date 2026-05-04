@@ -17,7 +17,7 @@ const baseItems = [
   { to: "/dashboard/configuracoes", label: "Configurações", icon: Settings },
   { to: "/dashboard/plano", label: "Plano", icon: CreditCard },
 ];
-const adminItem = { to: "/admin", label: "Admin", icon: Shield, end: false as boolean | undefined };
+const adminItem = { to: "/dashboard/usuarios", label: "Usuários", icon: Shield, end: false as boolean | undefined };
 
 const DashboardLayout = () => {
   const { user, loading, signOut } = useAuth();

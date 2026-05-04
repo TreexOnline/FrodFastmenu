@@ -23,6 +23,7 @@ import Orders from "./pages/dashboard/Orders";
 import Inventory from "./pages/dashboard/Inventory";
 import WhatsApp from "./pages/dashboard/WhatsApp";
 import AddonLibrary from "./pages/dashboard/AddonLibrary";
+import UserManagement from "./pages/dashboard/UserManagement";
 import GlobalOrderNotifier from "./components/GlobalOrderNotifier";
 
 // Only truly separate routes stay lazy
@@ -73,6 +74,7 @@ const App = () => (
                   <Route path="adicionais" element={<AddonLibrary />} />
                   <Route path="configuracoes" element={<Settings />} />
                   <Route path="plano" element={<PlanPage />} />
+                  <Route path="usuarios" element={<UserManagement />} />
                 </Route>
                 <Route path="*" element={<NotFound />} />
               </Routes>
