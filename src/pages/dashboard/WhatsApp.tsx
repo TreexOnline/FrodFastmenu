@@ -181,9 +181,17 @@ export default function WhatsAppPage() {
   };
 
   useEffect(() => {
-    loadAutoMessage();
-    
-    // Limpar polling ao desmontar
+    const init = async () => {
+      await loadAutoMessage();
+      setLoading(false); // ✅ garantir saída do loading
+    };
+
+    if (user) {
+      init();
+    } else {
+      setLoading(false); // fallback de segurança
+    }
+
     return () => {
       stopPolling();
     };
