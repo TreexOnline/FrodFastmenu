@@ -13,37 +13,57 @@ const logger = pino({
 
 class SupabaseService {
   constructor() {
-    // Tentar com ANON_KEY primeiro (mais permissivo para Lovable)
+    // Backend admin mode - usar SERVICE_ROLE_KEY para bypassar RLS
+    logger.info("Supabase initialized in SERVICE_ROLE backend admin mode");
+    
     this.supabase = createClient(
       process.env.SUPABASE_URL,
-      process.env.SUPABASE_ANON_KEY
+      process.env.SUPABASE_SERVICE_ROLE_KEY,
+      {
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false,
+          detectSessionInUrl: false
+        }
+      }
     );
-    
-    // Fallback para SERVICE_ROLE_KEY se ANON falhar
-    this.serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   }
 
   // ============ SESSÕES WHATSAPP ============
   
   async saveSessionStatus(userId, status, data = {}) {
     try {
-      const updateData = {
+      // Mapeamento seguro para colunas válidas da tabela
+      const mappedData = {
         status,
-        updated_at: new Date().toISOString(),
-        ...data
+        updated_at: new Date().toISOString()
       };
-
+      
+      // Mapear campos específicos
+      if (data.phone) mappedData.phone_number = data.phone;
+      if (data.profile_name) mappedData.profile_name = data.profile_name;
+      if (data.qr_code) mappedData.qr_code = data.qr_code;
+      if (data.last_activity) mappedData.last_activity_at = data.last_activity;
+      
+      // Se status = connected, preencher last_connected_at
+      if (status === 'connected') {
+        mappedData.last_connected_at = new Date().toISOString();
+      }
+      
+      // Payload final para debug
+      const payloadFinal = {
+        user_id: userId,
+        session_name: 'default',
+        ...mappedData
+      };
+      
+      logger.info('UPSERT whatsapp_sessions payload:', payloadFinal);
+      
       const { data: result, error } = await this.supabase
         .from('whatsapp_sessions')
-        .upsert({
-          user_id: userId,
-          session_name: 'default',
-          ...updateData
-        }, {
+        .upsert(payloadFinal, {
           onConflict: 'user_id,session_name'
-        })
-        .select()
-        .single();
+        });
 
       if (error) {
         logger.error('Error saving session status:', error);
@@ -81,18 +101,20 @@ class SupabaseService {
 
   async updateSessionQR(userId, qrCode) {
     try {
+      const payloadFinal = {
+        status: 'qr',
+        qr_code: qrCode,
+        qr_generated_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+      
+      logger.info('UPDATE whatsapp_sessions QR payload:', payloadFinal);
+      
       const { data, error } = await this.supabase
         .from('whatsapp_sessions')
-        .update({
-          status: 'qr',
-          qr_code: qrCode,
-          qr_generated_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        })
+        .update(payloadFinal)
         .eq('user_id', userId)
-        .eq('session_name', 'default')
-        .select()
-        .single();
+        .eq('session_name', 'default');
 
       if (error) {
         logger.error('Error updating QR code:', error);
@@ -109,16 +131,18 @@ class SupabaseService {
 
   async clearSessionQR(userId) {
     try {
+      const payloadFinal = {
+        qr_code: null,
+        updated_at: new Date().toISOString()
+      };
+      
+      logger.info('UPDATE whatsapp_sessions clear QR payload:', payloadFinal);
+      
       const { data, error } = await this.supabase
         .from('whatsapp_sessions')
-        .update({
-          qr_code: null,
-          updated_at: new Date().toISOString()
-        })
+        .update(payloadFinal)
         .eq('user_id', userId)
-        .eq('session_name', 'default')
-        .select()
-        .single();
+        .eq('session_name', 'default');
 
       if (error) {
         logger.error('Error clearing QR code:', error);
@@ -260,40 +284,17 @@ class SupabaseService {
 
   async testConnection() {
     try {
-      // Test connection com ANON_KEY primeiro
       const { data, error } = await this.supabase
         .from('profiles')
         .select('id')
         .limit(1);
 
       if (error) {
-        // Tentar com SERVICE_ROLE_KEY como fallback
-        if (this.serviceKey && this.serviceKey !== 'your-service-role-key') {
-          logger.warn('ANON_KEY failed, trying SERVICE_ROLE_KEY...');
-          const serviceClient = createClient(
-            process.env.SUPABASE_URL,
-            this.serviceKey
-          );
-          
-          const { data: serviceData, error: serviceError } = await serviceClient
-            .from('profiles')
-            .select('id')
-            .limit(1);
-            
-          if (serviceError) {
-            logger.error('Both ANON_KEY and SERVICE_ROLE_KEY failed:', serviceError);
-            throw new Error('Supabase connection failed - check API keys and Lovable permissions');
-          }
-          
-          logger.info('Supabase connection successful with SERVICE_ROLE_KEY');
-          return true;
-        } else {
-          logger.error('Supabase connection test failed:', error);
-          throw new Error('Invalid API keys - check Lovable Supabase configuration');
-        }
+        logger.error('Supabase connection test failed:', error);
+        throw new Error('Supabase connection failed - check SERVICE_ROLE_KEY and permissions');
       }
 
-      logger.info('Supabase connection successful with ANON_KEY');
+      logger.info('Supabase connection successful with SERVICE_ROLE_KEY');
       return true;
     } catch (error) {
       logger.error('Supabase connection test failed:', error.message);

@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { useWhatsappAddon } from "@/hooks/useWhatsappAddon";
-import { useWhatsAppWebSocket } from "@/hooks/useWhatsAppWebSocket";
+import { whatsappApi } from "@/config/whatsapp-api";
 import {
   MessageSquare,
   Smartphone,
@@ -77,7 +77,6 @@ interface ConnectionStatus {
 export default function WhatsAppPage() {
   const { user } = useAuth();
   const addon = useWhatsappAddon();
-  const { connected: wsConnected, status: wsStatus, qrCode: wsQrCode } = useWhatsAppWebSocket();
   const [session, setSession] = useState<WhatsAppSession | null>(null);
   const [autoMessage, setAutoMessage] = useState<AutoMessage | null>(null);
   const [loading, setLoading] = useState(true);
@@ -86,22 +85,57 @@ export default function WhatsAppPage() {
   const [messageText, setMessageText] = useState("");
   const [cooldownHours, setCooldownHours] = useState("24");
   const [isActive, setIsActive] = useState(true);
+  
+  // Estados para integração com WhatsApp Engine
+  const [connectionState, setConnectionState] = useState({
+    status: 'disconnected',
+    qr: null as string | null,
+    phone: null as string | null,
+    profileName: null as string | null
+  });
+  
+  // Ref para polling unificado
+  const pollingRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Usar dados do WebSocket quando disponíveis, senão usar do banco
-  const connected = wsStatus?.connected ?? session?.status === 'connected';
-  const phoneNumber = wsStatus?.phone ?? session?.phone;
-  const profileName = wsStatus?.profileName ?? session?.profile_name;
-  const qrCode = connected ? null : wsQrCode ?? session?.qr_code;
-
-  const loadSession = async () => {
-    if (!user) return;
-    const { data } = await supabase
-      .from("whatsapp_sessions" as any)
-      .select("*")
-      .eq("user_id", user.id)
-      .maybeSingle();
-    setSession(data as WhatsAppSession);
-    setLoading(false);
+  // Função unificada de polling para status (inclui QR)
+  const startStatusPolling = (userId: string) => {
+    // Limpar polling anterior se existir
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+    }
+    
+    // Iniciar novo polling
+    pollingRef.current = setInterval(async () => {
+      try {
+        const result = await whatsappApi.getStatus(userId);
+        if (result.success && result.data) {
+          setConnectionState({
+            status: result.data.status,
+            qr: result.data.qr || null,
+            phone: result.data.phone || null,
+            profileName: result.data.profile_name || null
+          });
+          
+          // Parar polling quando conectar com sucesso
+          if (result.data.status === 'connected') {
+            if (pollingRef.current) {
+              clearInterval(pollingRef.current);
+              pollingRef.current = null;
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Erro no polling de status:', error);
+      }
+    }, 3000); // A cada 3 segundos
+  };
+  
+  // Função para parar polling
+  const stopPolling = () => {
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+      pollingRef.current = null;
+    }
   };
 
   const loadAutoMessage = async () => {
@@ -121,8 +155,17 @@ export default function WhatsAppPage() {
   };
 
   useEffect(() => {
-    loadSession();
     loadAutoMessage();
+    
+    // Iniciar polling de status quando usuário carregar
+    if (user) {
+      startStatusPolling(user.id);
+    }
+    
+    // Limpar polling ao desmontar
+    return () => {
+      stopPolling();
+    };
   }, [user]);
 
   // Realtime updates para mensagens (WebSocket cuida do status)
@@ -157,14 +200,15 @@ export default function WhatsAppPage() {
   }, [user]);
 
   const handleConnect = async () => {
+    if (!user) return;
+    
     setConnecting(true);
     try {
-      const { data } = await supabase.functions.invoke("whatsapp-connect/connect", {
-        body: { user_id: user?.id }
-      });
-      
+      await whatsappApi.connect(user.id);
       toast.success("Conexão iniciada! Aguarde o QR Code...");
-      loadSession();
+      
+      // Iniciar polling de status para detectar mudanças
+      startStatusPolling(user.id);
     } catch (error: any) {
       toast.error("Erro ao conectar: " + (error.message || "Tente novamente"));
     } finally {
@@ -173,16 +217,20 @@ export default function WhatsAppPage() {
   };
 
   const handleDisconnect = async () => {
-    if (!confirm("Desconectar o WhatsApp?")) return;
+    if (!user || !confirm("Desconectar o WhatsApp?")) return;
     
     setConnecting(true);
     try {
-      await supabase.functions.invoke("whatsapp-connect/disconnect", {
-        body: { user_id: user?.id }
-      });
-      
+      await whatsappApi.disconnect(user.id);
       toast.success("WhatsApp desconectado!");
-      loadSession();
+      
+      // Resetar estado para disconnected
+      setConnectionState({
+        status: 'disconnected',
+        qr: null,
+        phone: null,
+        profileName: null
+      });
     } catch (error: any) {
       toast.error("Erro ao desconectar: " + (error.message || "Tente novamente"));
     } finally {
@@ -368,18 +416,23 @@ export default function WhatsAppPage() {
           <div className="grid lg:grid-cols-2 gap-6 items-start">
             <div className="space-y-4">
               <div className="flex items-center gap-3">
-                {connected ? (
+                {connectionState.status === 'connected' ? (
                   <>
                     <Badge className="bg-green-500/15 text-green-600 hover:bg-green-500/20 border-green-500/30">
                       <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
                       Conectado
                     </Badge>
-                    {phoneNumber && (
+                    {connectionState.phone && (
                       <span className="text-sm text-muted-foreground">
-                        +{phoneNumber}
+                        +{connectionState.phone}
                       </span>
                     )}
                   </>
+                ) : connectionState.status === 'connecting' ? (
+                  <Badge className="bg-yellow-500/15 text-yellow-600 hover:bg-yellow-500/20 border-yellow-500/30">
+                    <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
+                    Conectando
+                  </Badge>
                 ) : (
                   <Badge variant="outline" className="text-muted-foreground">
                     <XCircle className="w-3.5 h-3.5 mr-1" />
@@ -388,15 +441,15 @@ export default function WhatsAppPage() {
                 )}
               </div>
 
-              {connected ? (
+              {connectionState.status === 'connected' ? (
                 <div className="space-y-2 text-sm text-muted-foreground">
                   <p>
                     Seu WhatsApp está conectado e pronto para responder
                     automaticamente.
                   </p>
-                  {profileName && (
+                  {connectionState.profileName && (
                     <p>
-                      Perfil: <strong>{profileName}</strong>
+                      Perfil: <strong>{connectionState.profileName}</strong>
                     </p>
                   )}
                 </div>
@@ -409,7 +462,7 @@ export default function WhatsAppPage() {
               )}
 
               <div className="flex flex-wrap gap-2">
-                {!connected && (
+                {connectionState.status !== 'connected' && (
                   <Button onClick={handleConnect} disabled={connecting}>
                     {connecting ? (
                       <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -421,7 +474,9 @@ export default function WhatsAppPage() {
                 )}
                 <Button
                   variant="outline"
-                  onClick={() => loadSession()}
+                  onClick={() => {
+                    if (user) startStatusPolling(user.id);
+                  }}
                   disabled={connecting}
                 >
                   <RefreshCw
@@ -431,7 +486,7 @@ export default function WhatsAppPage() {
                   />
                   Atualizar
                 </Button>
-                {connected && (
+                {connectionState.status === 'connected' && (
                   <Button
                     variant="destructive"
                     onClick={handleDisconnect}
@@ -446,7 +501,7 @@ export default function WhatsAppPage() {
 
             {/* QR Code */}
             <div className="flex items-center justify-center">
-              {connected ? (
+              {connectionState.status === 'connected' ? (
                 <div className="rounded-2xl border-2 border-dashed border-green-500/30 bg-green-500/5 p-12 text-center">
                   <Wifi className="w-16 h-16 mx-auto mb-3 text-green-600" />
                   <p className="font-medium">Conectado!</p>
@@ -454,15 +509,23 @@ export default function WhatsAppPage() {
                     WhatsApp ativo e funcionando
                   </p>
                 </div>
-              ) : qrCode ? (
+              ) : connectionState.qr ? (
                 <div className="rounded-2xl bg-white p-4 shadow-sm border">
                   <img
-                    src={qrCode}
+                    src={connectionState.qr}
                     alt="QR Code"
                     className="w-64 h-64 object-contain"
                   />
                   <p className="text-center text-xs text-muted-foreground mt-2">
                     Escaneie com seu WhatsApp
+                  </p>
+                </div>
+              ) : connectionState.status === 'connecting' ? (
+                <div className="rounded-2xl border-2 border-dashed border-yellow-500/30 bg-yellow-500/5 p-12 text-center">
+                  <Loader2 className="w-16 h-16 mx-auto mb-3 text-yellow-600 animate-spin" />
+                  <p className="font-medium">Gerando QR Code...</p>
+                  <p className="text-sm text-muted-foreground">
+                    Aguarde um momento
                   </p>
                 </div>
               ) : (

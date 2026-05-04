@@ -1,4 +1,4 @@
-const { useMultiFileAuthState, makeWASocket, DisconnectReason } = require('@whiskeysockets/baileys');
+const { useMultiFileAuthState, makeWASocket, DisconnectReason, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
 const pino = require('pino');
 const qrcode = require('qrcode');
 const fs = require('fs-extra');
@@ -72,17 +72,28 @@ class SessionManager {
       // Criar estado de autenticação persistente
       const authPath = this.getAuthPath(userId);
       await fs.ensureDir(authPath);
-
+      
+      logger.info(`Auth state loaded successfully for user: ${userId}`);
       const { state, saveCreds } = await useMultiFileAuthState(authPath);
 
       // Criar socket Baileys
+      logger.info(`Creating Baileys socket with persistent auth state for user: ${userId}`);
+      
+      // Buscar versão mais recente do Baileys
+      const { version, isLatest } = await fetchLatestBaileysVersion();
+      logger.info(`Using latest Baileys WA version: ${version} | isLatest: ${isLatest}`);
+      
       const sock = makeWASocket({
-        authState: state,
+        auth: state,
+        version,
         printQRInTerminal: false,
         connectTimeoutMs: 60000,
         retryRequestDelayMs: 100,
         keepAliveIntervalMs: 30000,
-        browser: ['FrodFast', 'Chrome', '96.0.4664.110'],
+        browser: ['Ubuntu', 'Chrome', '122.0.0.0'],
+        syncFullHistory: false,
+        markOnlineOnConnect: false,
+        fireInitQueries: true,
         logger: pino({ level: 'silent' }) // Silenciar logs do Baileys
       });
 
@@ -113,11 +124,23 @@ class SessionManager {
 
     // Evento de atualização de conexão
     sock.ev.on('connection.update', async (update) => {
+      // Log detalhado para diagnóstico
+      logger.info(`RAW connection.update for ${userId}: ${JSON.stringify({
+        connection: update.connection || null,
+        hasQr: !!update.qr,
+        lastDisconnect: update.lastDisconnect ? {
+          errorMessage: update.lastDisconnect.error?.message || null,
+          statusCode: update.lastDisconnect.error?.output?.statusCode || null,
+          payload: update.lastDisconnect.error || null
+        } : null
+      }, null, 2)}`);
+
       logger.info(`Connection update for user ${userId}:`, update);
 
       try {
         if (update.qr) {
           // QR Code disponível
+          logger.info(`QR RECEIVED for user ${userId}`);
           const qrDataUrl = await qrcode.toDataURL(update.qr);
           sessionData.qr = qrDataUrl;
           sessionData.status = 'qr';
@@ -130,6 +153,7 @@ class SessionManager {
 
         if (update.connection === 'open') {
           // Conexão estabelecida com sucesso
+          logger.info(`CONNECTION OPEN for user ${userId}`);
           const authInfo = sock.user;
           
           sessionData.status = 'connected';
@@ -154,7 +178,17 @@ class SessionManager {
 
         if (update.connection === 'close') {
           // Conexão fechada
-          const shouldReconnect = update.lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
+          const statusCode = update.lastDisconnect?.error?.output?.statusCode;
+          logger.info(`CONNECTION CLOSED for user ${userId} - statusCode: ${statusCode}`);
+          
+          // Tratamento específico para handshake rejeitado
+          if (statusCode === 405) {
+            logger.error(`Handshake rejected by WhatsApp server for user ${userId} - Browser/Version incompatibility`);
+            // Não tentar reconectar imediatamente para evitar loop infinito
+            sessionData.reconnectAttempts = sessionData.maxReconnectAttempts;
+          }
+          
+          const shouldReconnect = statusCode !== DisconnectReason.loggedOut && statusCode !== 405;
 
           sessionData.status = 'disconnected';
 
@@ -165,12 +199,13 @@ class SessionManager {
 
           if (shouldReconnect && sessionData.reconnectAttempts < sessionData.maxReconnectAttempts) {
             sessionData.reconnectAttempts++;
-            logger.info(`Attempting to reconnect for user ${userId} (attempt ${sessionData.reconnectAttempts}/${sessionData.maxReconnectAttempts})`);
+            const delayMs = statusCode === 405 ? 8000 : Math.pow(2, sessionData.reconnectAttempts) * 1000;
+            logger.info(`Attempting to reconnect for user ${userId} (attempt ${sessionData.reconnectAttempts}/${sessionData.maxReconnectAttempts}) - delay: ${delayMs}ms`);
             
             // Tentar reconectar após delay
             setTimeout(() => {
               this.startSession(userId);
-            }, Math.pow(2, sessionData.reconnectAttempts) * 1000); // Exponential backoff
+            }, delayMs); // Exponential backoff ou 8s para handshake rejected
           } else {
             logger.error(`Max reconnection attempts reached for user ${userId} or logged out`);
             this.sessions.delete(userId);
