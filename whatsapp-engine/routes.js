@@ -323,6 +323,33 @@ class Routes {
       }
     });
 
+    // POST /save-config/:userId - Salvar configuração de auto resposta
+    this.router.post('/save-config/:userId', async (req, res) => {
+      try {
+        const { userId } = req.params;
+        const { message_template, cooldown_minutes, is_active } = req.body;
+        
+        const { data, error } = await this.sessionManager.supabaseService.supabase
+          .from('whatsapp_auto_messages')
+          .upsert({
+            user_id: userId,
+            message_template,
+            cooldown_minutes: cooldown_minutes || 5,
+            is_active: is_active !== false
+          }, {
+            onConflict: 'user_id'
+          })
+          .select()
+          .single();
+          
+        if (error) throw error;
+        
+        res.json({ success: true, data });
+      } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+      }
+    });
+
     // POST /cleanup - Limpar sessões antigas
     this.router.post('/cleanup', async (req, res) => {
       try {
