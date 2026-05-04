@@ -281,14 +281,12 @@ export default function WhatsAppPage() {
 
     setSaving(true);
     try {
-      await supabase.functions.invoke("whatsapp-connect/save-config", {
-        body: {
-          user_id: user?.id,
-          message_template: messageText,
-          cooldown_minutes: parseInt(cooldownHours) * 60,
-          is_active: isActive
-        }
-      });
+      await whatsappApi.saveConfig(
+        user?.id || '',
+        messageText,
+        parseInt(cooldownHours) * 60,
+        isActive
+      );
       
       toast.success("Configuração salva com sucesso!");
       await loadAutoMessage();

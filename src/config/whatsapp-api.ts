@@ -56,4 +56,25 @@ export const whatsappApi = {
     
     return response.json();
   },
+
+  // POST /save-config/{userId}
+  saveConfig: async (userId: string, message_template: string, cooldown_minutes: number, is_active: boolean) => {
+    const response = await fetch(`${WHATSAPP_API_BASE_URL}/save-config/${userId}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        message_template,
+        cooldown_minutes,
+        is_active
+      }),
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Erro ao salvar configuração: ${response.status} ${response.statusText}`);
+    }
+    
+    return response.json();
+  },
 };
