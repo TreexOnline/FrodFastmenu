@@ -20,32 +20,11 @@ class Routes {
   }
 
   setupRoutes() {
-    // Middleware para logging e autenticação básica
+    // Middleware para logging apenas
     this.router.use((req, res, next) => {
-      const userId = req.params.userId || req.body?.userId || req.query?.userId;
       const clientIp = req.ip || req.connection.remoteAddress;
       
-      logger.info(`${req.method} ${req.path} - User: ${userId || 'unknown'} - IP: ${clientIp}`);
-      
-      // Validação básica de userId para rotas que precisam
-      if (req.path.includes('/connect/') || req.path.includes('/status/') || req.path.includes('/disconnect/') || req.path.includes('/reconnect/')) {
-        if (!userId) {
-          return res.status(400).json({
-            success: false,
-            error: 'userId is required',
-            code: 'MISSING_USER_ID'
-          });
-        }
-        
-        // Validação básica do formato do userId
-        if (typeof userId !== 'string' || userId.length < 3) {
-          return res.status(400).json({
-            success: false,
-            error: 'Invalid userId format',
-            code: 'INVALID_USER_ID'
-          });
-        }
-      }
+      logger.info(`${req.method} ${req.path} - IP: ${clientIp}`);
       
       next();
     });
@@ -55,10 +34,20 @@ class Routes {
       try {
         const { userId } = req.params;
         
+        // Validação local de userId
         if (!userId) {
           return res.status(400).json({
             success: false,
-            error: 'userId is required'
+            error: 'userId is required',
+            code: 'MISSING_USER_ID'
+          });
+        }
+        
+        if (typeof userId !== 'string' || userId.length < 3) {
+          return res.status(400).json({
+            success: false,
+            error: 'Invalid userId format',
+            code: 'INVALID_USER_ID'
           });
         }
 
@@ -88,10 +77,20 @@ class Routes {
       try {
         const { userId } = req.params;
         
+        // Validação local de userId
         if (!userId) {
           return res.status(400).json({
             success: false,
-            error: 'userId is required'
+            error: 'userId is required',
+            code: 'MISSING_USER_ID'
+          });
+        }
+        
+        if (typeof userId !== 'string' || userId.length < 3) {
+          return res.status(400).json({
+            success: false,
+            error: 'Invalid userId format',
+            code: 'INVALID_USER_ID'
           });
         }
 
@@ -115,10 +114,20 @@ class Routes {
       try {
         const { userId } = req.params;
         
+        // Validação local de userId
         if (!userId) {
           return res.status(400).json({
             success: false,
-            error: 'userId is required'
+            error: 'userId is required',
+            code: 'MISSING_USER_ID'
+          });
+        }
+        
+        if (typeof userId !== 'string' || userId.length < 3) {
+          return res.status(400).json({
+            success: false,
+            error: 'Invalid userId format',
+            code: 'INVALID_USER_ID'
           });
         }
 
@@ -155,10 +164,20 @@ class Routes {
       try {
         const { userId } = req.params;
         
+        // Validação local de userId
         if (!userId) {
           return res.status(400).json({
             success: false,
-            error: 'userId is required'
+            error: 'userId is required',
+            code: 'MISSING_USER_ID'
+          });
+        }
+        
+        if (typeof userId !== 'string' || userId.length < 3) {
+          return res.status(400).json({
+            success: false,
+            error: 'Invalid userId format',
+            code: 'INVALID_USER_ID'
           });
         }
 
@@ -188,10 +207,20 @@ class Routes {
       try {
         const { userId } = req.params;
         
+        // Validação local de userId
         if (!userId) {
           return res.status(400).json({
             success: false,
-            error: 'userId is required'
+            error: 'userId is required',
+            code: 'MISSING_USER_ID'
+          });
+        }
+        
+        if (typeof userId !== 'string' || userId.length < 3) {
+          return res.status(400).json({
+            success: false,
+            error: 'Invalid userId format',
+            code: 'INVALID_USER_ID'
           });
         }
 
