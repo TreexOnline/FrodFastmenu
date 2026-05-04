@@ -96,6 +96,9 @@ export default function WhatsAppPage() {
   
   // Ref para polling unificado
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Estado local para debug logs
+  const [debugLogs, setDebugLogs] = useState<string[]>([]);
 
   // Função unificada de polling para status (inclui QR)
   const startStatusPolling = (userId: string) => {
@@ -109,6 +112,8 @@ export default function WhatsAppPage() {
       try {
         const result = await whatsappApi.getStatus(userId);
         if (result.success && result.data) {
+          debugLog('📥 Status received', result.data);
+          
           setConnectionState({
             status: result.data.status,
             qr: result.data.qr || null,
@@ -116,8 +121,17 @@ export default function WhatsAppPage() {
             profileName: result.data.profile_name || null
           });
           
+          // Log específico para mudanças de estado
+          if (result.data.status === 'qr') {
+            debugLog('📲 QR state detected');
+            if (result.data.qr) {
+              debugLog('📸 QR received');
+            }
+          }
+          
           // Parar polling quando conectar com sucesso
           if (result.data.status === 'connected') {
+            debugLog('🟢 CONNECTED - stopping flow');
             if (pollingRef.current) {
               clearInterval(pollingRef.current);
               pollingRef.current = null;
@@ -125,6 +139,7 @@ export default function WhatsAppPage() {
           }
         }
       } catch (error) {
+        debugLog('❌ Status polling error', { error: error.message });
         console.error('Erro no polling de status:', error);
       }
     }, 3000); // A cada 3 segundos
@@ -136,6 +151,17 @@ export default function WhatsAppPage() {
       clearInterval(pollingRef.current);
       pollingRef.current = null;
     }
+  };
+  
+  // Função de debug local
+  const debugLog = (message: string, data?: any) => {
+    const time = new Date().toLocaleTimeString();
+    const formatted = data 
+      ? `[${time}] ${message} - ${JSON.stringify(data)}` 
+      : `[${time}] ${message}`;
+    
+    console.log('📡 [WHATSAPP DEBUG]', formatted);
+    setDebugLogs((prev) => [...prev.slice(-50), formatted]);
   };
 
   const loadAutoMessage = async () => {
@@ -202,14 +228,18 @@ export default function WhatsAppPage() {
   const handleConnect = async () => {
     if (!user) return;
     
+    debugLog('🚀 Connect clicked', { userId: user.id });
     setConnecting(true);
     try {
       await whatsappApi.connect(user.id);
       toast.success("Conexão iniciada! Aguarde o QR Code...");
+      debugLog('🔁 Connect API called successfully');
       
       // Iniciar polling de status para detectar mudanças
+      debugLog('🔁 Status polling started');
       startStatusPolling(user.id);
     } catch (error: any) {
+      debugLog('❌ Connect error', { error: error.message });
       toast.error("Erro ao conectar: " + (error.message || "Tente novamente"));
     } finally {
       setConnecting(false);
@@ -219,10 +249,12 @@ export default function WhatsAppPage() {
   const handleDisconnect = async () => {
     if (!user || !confirm("Desconectar o WhatsApp?")) return;
     
+    debugLog('🔌 Disconnect clicked', { userId: user.id });
     setConnecting(true);
     try {
       await whatsappApi.disconnect(user.id);
       toast.success("WhatsApp desconectado!");
+      debugLog('🔌 Disconnect API called successfully');
       
       // Resetar estado para disconnected
       setConnectionState({
@@ -232,6 +264,7 @@ export default function WhatsAppPage() {
         profileName: null
       });
     } catch (error: any) {
+      debugLog('❌ Disconnect error', { error: error.message });
       toast.error("Erro ao desconectar: " + (error.message || "Tente novamente"));
     } finally {
       setConnecting(false);
@@ -695,6 +728,14 @@ export default function WhatsAppPage() {
           </div>
         </CardContent>
       </Card>
+      
+      {/* Debug Panel - Tempário */}
+      <div className="fixed bottom-4 right-4 w-96 max-h-64 overflow-auto bg-black text-green-400 text-xs p-3 rounded-lg opacity-90 z-50">
+        <div className="font-bold mb-2">📡 WhatsApp Debug</div>
+        {debugLogs.slice(-20).map((log, i) => (
+          <div key={i} className="mb-1">{log}</div>
+        ))}
+      </div>
     </div>
   );
 }
