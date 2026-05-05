@@ -282,12 +282,12 @@ export default function WhatsAppPage() {
     setSaving(true);
     try {
       await supabase
-        .from("whatsapp_auto_messages")
+        .from("whatsapp_auto_messages" as any)
         .upsert({
           user_id: user?.id,
-          message_template: messageText,
+          welcome_message: messageText,
           cooldown_minutes: parseInt(cooldownHours) * 60,
-          is_active: isActive
+          enabled: isActive
         });
       
       toast.success("Configuração salva com sucesso!");
