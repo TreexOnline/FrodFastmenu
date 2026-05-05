@@ -71,6 +71,9 @@ class SessionManager {
 
       // Criar estado de autenticação persistente
       const authPath = this.getAuthPath(userId);
+      
+      // 🥇 PASSO 1 — limpa sessão
+      await fs.remove(authPath);
       await fs.ensureDir(authPath);
       
       logger.info(`Auth state loaded successfully for user: ${userId}`);
@@ -90,7 +93,7 @@ class SessionManager {
         connectTimeoutMs: 60000,
         retryRequestDelayMs: 100,
         keepAliveIntervalMs: 30000,
-        browser: ['Ubuntu', 'Chrome', '122.0.0.0'],
+        browser: ['Windows', 'Chrome', '120.0.0.0'],
         syncFullHistory: false,
         markOnlineOnConnect: false,
         fireInitQueries: true,
@@ -153,7 +156,8 @@ class SessionManager {
 
         if (update.connection === 'open') {
           // Conexão estabelecida com sucesso
-          logger.info(`CONNECTION OPEN for user ${userId}`);
+          // 🥇 PASSO 4 — loga quando conectar de verdade
+          logger.info(`🎉 CONNECTION OPEN for user ${userId} - CHEGOU AQUI!!!`);
           const authInfo = sock.user;
           
           sessionData.status = 'connected';
@@ -199,7 +203,8 @@ class SessionManager {
 
           if (shouldReconnect && sessionData.reconnectAttempts < sessionData.maxReconnectAttempts) {
             sessionData.reconnectAttempts++;
-            const delayMs = statusCode === 405 ? 8000 : Math.pow(2, sessionData.reconnectAttempts) * 1000;
+            // 🥇 PASSO 3 — evita loop agressivo
+            const delayMs = 5000;
             logger.info(`Attempting to reconnect for user ${userId} (attempt ${sessionData.reconnectAttempts}/${sessionData.maxReconnectAttempts}) - delay: ${delayMs}ms`);
             
             // Tentar reconectar após delay
