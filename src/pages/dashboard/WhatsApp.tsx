@@ -169,13 +169,13 @@ export default function WhatsAppPage() {
     const { data } = await supabase
       .from("whatsapp_auto_messages" as any)
       .select("*")
-      .eq("user_id", user.id)
+      .eq("store_id", user.id)
       .maybeSingle();
     
     if (data) {
       setAutoMessage(data as unknown as AutoMessage);
-      setMessageText((data as any).message_template || '');
-      setCooldownHours(Math.floor(((data as any).cooldown_minutes || 1440) / 60).toString());
+      setMessageText((data as any).message_text || '');
+      setCooldownHours((data as any).cooldown_hours?.toString() || '24');
       setIsActive((data as any).is_active);
     }
   };
@@ -209,13 +209,13 @@ export default function WhatsAppPage() {
           event: "*",
           schema: "public",
           table: "whatsapp_auto_messages" as any,
-          filter: `user_id=eq.${user.id}`,
+          filter: `store_id=eq.${user.id}`,
         },
         (payload) => {
           if (payload.new) {
             setAutoMessage(payload.new as AutoMessage);
-            setMessageText((payload.new as any).message_template || '');
-            setCooldownHours(Math.floor(((payload.new as any).cooldown_minutes || 1440) / 60).toString());
+            setMessageText((payload.new as any).message_text || '');
+            setCooldownHours((payload.new as any).cooldown_hours?.toString() || '24');
             setIsActive((payload.new as any).is_active);
           }
         },
@@ -281,14 +281,22 @@ export default function WhatsAppPage() {
 
     setSaving(true);
     try {
-      await supabase
+      const { error } = await supabase
         .from("whatsapp_auto_messages" as any)
         .upsert({
-          user_id: user?.id,
-          welcome_message: messageText,
-          cooldown_minutes: parseInt(cooldownHours) * 60,
-          enabled: isActive
+          store_id: user?.id,
+          message_text: messageText,
+          cooldown_hours: parseInt(cooldownHours),
+          is_active: isActive
+        }, {
+          onConflict: 'store_id'
         });
+      
+      if (error) {
+        console.error('Erro ao salvar:', error);
+        toast.error("Erro ao salvar: " + error.message);
+        return;
+      }
       
       toast.success("Configuração salva com sucesso!");
       await loadAutoMessage();
