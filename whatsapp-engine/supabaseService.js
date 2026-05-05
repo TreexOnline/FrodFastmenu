@@ -164,8 +164,8 @@ class SupabaseService {
       const { data, error } = await this.supabase
         .from('whatsapp_auto_messages')
         .select('*')
-        .eq('user_id', userId)
-        .eq('enabled', true)
+        .eq('store_id', userId)
+        .eq('is_active', true)
         .single();
 
       if (error && error.code !== 'PGRST116') {

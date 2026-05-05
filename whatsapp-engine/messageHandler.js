@@ -58,7 +58,7 @@ class MessageHandler {
       logger.info(`✅ Auto responder enabled, welcome message loaded for user ${userId}`);
 
       // 2. Usar welcome message e cooldown fixo
-      const autoReplyText = autoResponderConfig.welcome_message;
+      const autoReplyText = autoResponderConfig.message_text;
       const cooldownHours = 24;
 
       // 3. Validar mensagem de boas-vindas

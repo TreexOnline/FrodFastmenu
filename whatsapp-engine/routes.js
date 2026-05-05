@@ -327,18 +327,18 @@ class Routes {
     this.router.post('/save-config/:userId', async (req, res) => {
       try {
         const { userId } = req.params;
-        const { welcome_message, enabled } = req.body;
+        const { message_text, is_active } = req.body;
         
         logger.info(`💾 Saving WhatsApp auto responder config for user: ${userId}`);
         
         const { data, error } = await this.sessionManager.supabaseService.supabase
           .from('whatsapp_auto_messages')
           .upsert({
-            user_id: userId,
-            welcome_message,
-            enabled: enabled !== false
+            store_id: userId,
+            message_text,
+            is_active: is_active !== false
           }, {
-            onConflict: 'user_id'
+            onConflict: 'store_id'
           })
           .select()
           .single();
