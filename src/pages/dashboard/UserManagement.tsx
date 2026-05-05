@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
-import { UserPlus, Mail, Lock, Store, CreditCard, Shield, Trash2 } from "lucide-react";
+import { UserPlus, Mail, Lock, Store, CreditCard, Shield, Trash2, Key, Calendar } from "lucide-react";
 
 interface NewUser {
   email: string;
@@ -70,23 +70,54 @@ export default function UserManagement() {
     checkAdmin();
   }, [user, navigate]);
 
-  // Carregar usuários existentes
+  // Carregar usuários existentes (incluindo admin)
   const loadUsers = async () => {
     if (!user) return;
     
     try {
-      const { data, error } = await supabase
+      // Carregar usuários normais da view
+      const { data: usersData, error: usersError } = await supabase
         .from("admin_users_view")
         .select("*")
         .order("created_at", { ascending: false });
       
-      if (error) {
+      // Carregar dados do admin atual
+      const { data: adminData, error: adminError } = await supabase
+        .from("profiles")
+        .select("id, email, full_name, restaurant_name, current_plan, plan_active, whatsapp_addon_active, created_at")
+        .eq("email", "vitoradmin@admin.dev")
+        .maybeSingle();
+      
+      if (usersError || adminError) {
         toast.error("Erro ao carregar usuários");
-        console.error("Load users error:", error);
+        console.error("Load users error:", usersError || adminError);
         return;
       }
       
-      setUsers(data as ExistingUser[]);
+      let allUsers = [...(usersData as ExistingUser[])];
+      
+      // Adicionar admin na lista se encontrado
+      if (adminData) {
+        const adminUser: ExistingUser = {
+          id: adminData.id,
+          email: adminData.email,
+          full_name: adminData.full_name || "Vitor Admin",
+          restaurant_name: adminData.restaurant_name || "FrodFast Admin",
+          current_plan: adminData.current_plan || "free",
+          plan_active: adminData.plan_active || false,
+          whatsapp_addon_active: adminData.whatsapp_addon_active || true,
+          created_at: adminData.created_at,
+          role: "admin"
+        };
+        
+        // Verificar se admin já está na lista
+        const adminExists = allUsers.some(u => u.id === adminData.id);
+        if (!adminExists) {
+          allUsers.unshift(adminUser); // Admin aparece primeiro
+        }
+      }
+      
+      setUsers(allUsers);
     } catch (error) {
       toast.error("Erro ao carregar usuários");
       console.error("Load users error:", error);
@@ -255,6 +286,12 @@ export default function UserManagement() {
   };
 
   const handleDeleteUser = async (userId: string, userEmail: string) => {
+    // Não permitir excluir admin
+    if (userEmail === "vitoradmin@admin.dev") {
+      toast.error("Não é possível excluir o usuário administrador");
+      return;
+    }
+    
     if (!confirm(`Tem certeza que deseja excluir o usuário ${userEmail}?`)) {
       return;
     }
@@ -278,6 +315,13 @@ export default function UserManagement() {
   };
 
   const handleUpdatePlan = async (userId: string, plan: string) => {
+    // Não permitir alterar plano do admin
+    const currentUser = users.find(u => u.id === userId);
+    if (currentUser?.email === "vitoradmin@admin.dev") {
+      toast.error("Não é possível alterar o plano do administrador");
+      return;
+    }
+    
     try {
       const { error } = await supabase
         .from("profiles")
@@ -302,6 +346,13 @@ export default function UserManagement() {
   };
 
   const handleToggleWhatsApp = async (userId: string, enabled: boolean) => {
+    // Não permitir alterar WhatsApp do admin
+    const currentUser = users.find(u => u.id === userId);
+    if (currentUser?.email === "vitoradmin@admin.dev") {
+      toast.error("Não é possível alterar o WhatsApp do administrador");
+      return;
+    }
+    
     try {
       const { error } = await supabase
         .from("profiles")
@@ -544,36 +595,61 @@ export default function UserManagement() {
                       </div>
                       
                       <div className="flex flex-col gap-2 ml-4">
-                        <Select
-                          value={user.current_plan}
-                          onValueChange={(value) => handleUpdatePlan(user.id, value)}
-                        >
-                          <SelectTrigger className="w-32">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="free">Gratuito</SelectItem>
-                            <SelectItem value="basic">Básico</SelectItem>
-                            <SelectItem value="premium">Premium</SelectItem>
-                            <SelectItem value="enterprise">Enterprise</SelectItem>
-                          </SelectContent>
-                        </Select>
+                        {/* Plano - não permite alterar admin */}
+                        {user.email === "vitoradmin@admin.dev" ? (
+                          <div className="text-sm text-muted-foreground">
+                            <span className="font-medium">Plano:</span> {user.current_plan} (admin)
+                          </div>
+                        ) : (
+                          <Select
+                            value={user.current_plan}
+                            onValueChange={(value) => handleUpdatePlan(user.id, value)}
+                          >
+                            <SelectTrigger className="w-32">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="free">Gratuito</SelectItem>
+                              <SelectItem value="basic">Básico</SelectItem>
+                              <SelectItem value="premium">Premium</SelectItem>
+                              <SelectItem value="enterprise">Enterprise</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        )}
                         
-                        <Button
-                          variant={user.whatsapp_addon_active ? "destructive" : "default"}
-                          size="sm"
-                          onClick={() => handleToggleWhatsApp(user.id, !user.whatsapp_addon_active)}
-                        >
-                          {user.whatsapp_addon_active ? "Desativar" : "Ativar"} WhatsApp
-                        </Button>
+                        {/* WhatsApp - não permite alterar admin */}
+                        {user.email === "vitoradmin@admin.dev" ? (
+                          <div className="text-sm text-muted-foreground">
+                            <span className="font-medium">WhatsApp:</span> {user.whatsapp_addon_active ? "Ativo" : "Inativo"} (admin)
+                          </div>
+                        ) : (
+                          <Button
+                            variant={user.whatsapp_addon_active ? "destructive" : "default"}
+                            size="sm"
+                            onClick={() => handleToggleWhatsApp(user.id, !user.whatsapp_addon_active)}
+                          >
+                            {user.whatsapp_addon_active ? "Desativar" : "Ativar"} WhatsApp
+                          </Button>
+                        )}
                         
-                        <Button
-                          variant="destructive"
-                          size="sm"
-                          onClick={() => handleDeleteUser(user.id, user.email)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        {/* Excluir - não permite excluir admin */}
+                        {user.email === "vitoradmin@admin.dev" ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled
+                          >
+                            <Shield className="h-4 w-4" />
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={() => handleDeleteUser(user.id, user.email)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
                       </div>
                     </div>
                   </div>
