@@ -327,15 +327,16 @@ class Routes {
     this.router.post('/save-config/:userId', async (req, res) => {
       try {
         const { userId } = req.params;
-        const { message_template, cooldown_minutes, is_active } = req.body;
+        const { welcome_message, enabled } = req.body;
+        
+        logger.info(`💾 Saving WhatsApp auto responder config for user: ${userId}`);
         
         const { data, error } = await this.sessionManager.supabaseService.supabase
           .from('whatsapp_auto_messages')
           .upsert({
             user_id: userId,
-            message_template,
-            cooldown_minutes: cooldown_minutes || 5,
-            is_active: is_active !== false
+            welcome_message,
+            enabled: enabled !== false
           }, {
             onConflict: 'user_id'
           })
@@ -344,8 +345,10 @@ class Routes {
           
         if (error) throw error;
         
+        logger.info(`✅ WhatsApp auto responder config saved successfully for user: ${userId}`);
         res.json({ success: true, data });
       } catch (error) {
+        logger.error('Error saving WhatsApp config:', error);
         res.status(500).json({ success: false, error: error.message });
       }
     });

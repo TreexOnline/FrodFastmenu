@@ -13,6 +13,7 @@ const logger = pino({
 class MessageHandler {
   static async handleIncomingMessage(m, userId, sock, supabaseService) {
     try {
+      logger.info(`📩 EVENT messages.upsert received`);
       const message = m.messages[0];
       
       if (!message.message) {
@@ -44,7 +45,7 @@ class MessageHandler {
 
       const customerNumber = message.key.remoteJid?.replace('@s.whatsapp.net', '') || 'unknown';
 
-      logger.info(`📨 Message received for user ${userId} from ${customerNumber}: "${messageContent.substring(0, 50)}..."`);
+      logger.info(`📨 Incoming valid customer message from ${customerNumber}: "${messageContent.substring(0, 50)}..."`);
 
       // 1. Obter configuração de auto resposta
       const autoResponderConfig = await supabaseService.getAutoResponderConfig(userId);
@@ -54,55 +55,61 @@ class MessageHandler {
         return;
       }
 
-      logger.info(`✅ Auto responder config found for user ${userId}:`, {
-        cooldownHours: autoResponderConfig.cooldown_hours,
-        messageLength: autoResponderConfig.message_text.length
-      });
+      logger.info(`✅ Auto responder enabled, welcome message loaded for user ${userId}`);
 
-      // 2. Verificar cooldown
+      // 2. Usar welcome message e cooldown fixo
+      const autoReplyText = autoResponderConfig.welcome_message;
+      const cooldownHours = 24;
+
+      // 3. Validar mensagem de boas-vindas
+      if (!autoReplyText || !autoReplyText.trim()) {
+        logger.info(`❌ Empty welcome message for user ${userId}`);
+        return;
+      }
+
+      // 4. Verificar cooldown
       const cooldownData = await supabaseService.checkCooldown(userId, customerNumber);
       
-      if (cooldownData?.last_auto_reply_at) {
-        const cooldownHours = autoResponderConfig.cooldown_hours;
-        const cooldownTime = new Date(cooldownData.last_auto_reply_at);
+      if (cooldownData?.last_sent_at) {
+        const cooldownTime = new Date(cooldownData.last_sent_at);
         cooldownTime.setHours(cooldownTime.getHours() + cooldownHours);
         
         if (new Date() < cooldownTime) {
-          logger.info(`⏰ Message in cooldown for user ${userId}, customer ${customerNumber}. Next reply at: ${cooldownTime}`);
+          logger.info(`⏰ Customer in cooldown for user ${userId}, customer ${customerNumber}. Next reply at: ${cooldownTime}`);
           return; // Ainda em cooldown
         }
       }
 
-      // 3. Logar mensagem recebida
+      // 5. Logar mensagem recebida
       await supabaseService.logIncomingMessage(userId, customerNumber, messageContent);
 
-      // 4. Enviar resposta automática
-      logger.info(`📤 Sending auto reply to ${customerNumber} for user ${userId}`);
+      // 6. Enviar resposta automática
+      logger.info(`📤 Sending welcome auto reply to ${customerNumber} for user ${userId}`);
       
       try {
         await sock.sendMessage(customerNumber + '@s.whatsapp.net', {
-          text: autoResponderConfig.message_text
+          text: autoReplyText
         });
         
-        logger.info(`✅ Auto reply sent successfully to ${customerNumber}`);
+        logger.info(`✅ Welcome auto reply sent successfully to ${customerNumber}`);
         
-        // 5. Logar mensagem enviada
-        await supabaseService.logOutgoingMessage(userId, customerNumber, autoResponderConfig.message_text);
+        // 7. Logar mensagem enviada
+        await supabaseService.logOutgoingMessage(userId, customerNumber, autoReplyText);
         
-        // 6. Atualizar cooldown
+        // 8. Atualizar cooldown
         await supabaseService.updateCooldown(userId, customerNumber);
         
         logger.info(`🎉 Auto reply process completed for user ${userId}, customer ${customerNumber}`);
         
       } catch (sendError) {
-        logger.error(`❌ Failed to send auto reply to ${customerNumber}:`, sendError);
+        logger.error(`❌ Auto reply send failed to ${customerNumber}:`, sendError);
         
         // Logar erro de envio
         await supabaseService.logMessage(userId, {
           direction: 'out',
           from_number: 'bot',
           to_number: customerNumber,
-          content: autoResponderConfig.message_text,
+          content: autoReplyText,
           message_type: 'text',
           status: 'failed',
           is_auto_reply: true,

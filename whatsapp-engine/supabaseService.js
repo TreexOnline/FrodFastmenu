@@ -164,8 +164,8 @@ class SupabaseService {
       const { data, error } = await this.supabase
         .from('whatsapp_auto_messages')
         .select('*')
-        .eq('store_id', userId)
-        .eq('is_active', true)
+        .eq('user_id', userId)
+        .eq('enabled', true)
         .single();
 
       if (error && error.code !== 'PGRST116') {
@@ -186,9 +186,9 @@ class SupabaseService {
     try {
       const { data, error } = await this.supabase
         .from('whatsapp_contacts_cooldown')
-        .select('last_auto_reply_at')
+        .select('last_sent_at')
         .eq('user_id', userId)
-        .eq('phone_number', customerNumber)
+        .eq('phone', customerNumber)
         .single();
 
       if (error && error.code !== 'PGRST116') {
@@ -209,10 +209,10 @@ class SupabaseService {
         .from('whatsapp_contacts_cooldown')
         .upsert({
           user_id: userId,
-          phone_number: customerNumber,
-          last_auto_reply_at: new Date().toISOString()
+          phone: customerNumber,
+          last_sent_at: new Date().toISOString()
         }, {
-          onConflict: 'user_id,phone_number'
+          onConflict: 'user_id,phone'
         })
         .select()
         .single();
