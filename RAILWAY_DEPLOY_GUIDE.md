@@ -120,15 +120,15 @@ AUTH_DATA_PATH=/tmp/auth_info  # Para Railway
 ## 🌐 **CONFIGURAÇÃO DE URLs**
 
 ### **✅ URL Railway:**
-- **Backend:** `https://whatsapp-engine-production.up.railway.app`
-- **API:** `https://whatsapp-engine-production.up.railway.app/api/whatsapp`
-- **Health:** `https://whatsapp-engine-production.up.railway.app/health`
+- **Backend:** `https://whatsmotor-production.up.railway.app`
+- **API:** `https://whatsmotor-production.up.railway.app/api/whatsapp`
+- **Health:** `https://whatsmotor-production.up.railway.app/health`
 
 ### **✅ Frontend Integration:**
 ```json
 {
   "env": {
-    "VITE_WHATSAPP_API_URL": "https://whatsapp-engine-production.up.railway.app"
+    "VITE_WHATSAPP_API_URL": "https://whatsmotor-production.up.railway.app"
   }
 }
 ```
@@ -181,7 +181,7 @@ UNIQUE(user_id, session_name)
 
 ### **✅ 1. Health Check:**
 ```bash
-curl https://whatsapp-engine-production.up.railway.app/health
+curl https://whatsmotor-production.up.railway.app/health
 
 # Response esperado:
 {
@@ -203,16 +203,18 @@ curl https://whatsapp-engine-production.up.railway.app/health
 ### **✅ 2. Conexão WhatsApp:**
 ```bash
 # Iniciar sessão para restaurante
-curl -X POST https://whatsapp-engine-production.up.railway.app/api/whatsapp/connect/restaurante-123
+curl -X POST https://whatsmotor-production.up.railway.app/api/v1/whatsapp/connect/restaurante-123
 
 # Verificar status
-curl https://whatsapp-engine-production.up.railway.app/api/whatsapp/status/restaurante-123
+curl https://whatsmotor-production.up.railway.app/api/v1/whatsapp/status/restaurante-123
 ```
 
 ### **✅ 3. Multi-tenant Test:**
 ```bash
 # Conectar múltiplos restaurantes
-curl -X POST /api/whatsapp/connect/restaurante-123
+curl -X POST /api/v1/whatsapp/connect/restaurante-123
+curl -X POST /api/v1/whatsapp/connect/restaurante-456
+curl -X POST /api/v1/whatsapp/connect/restaurante-789
 curl -X POST /api/whatsapp/connect/restaurante-456
 curl -X POST /api/whatsapp/connect/restaurante-789
 

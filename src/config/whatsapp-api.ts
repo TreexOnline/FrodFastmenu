@@ -1,5 +1,5 @@
 // Configuração da API do WhatsApp Engine (Railway)
-export const WHATSAPP_API_BASE_URL = 'https://sistema-zap-production.up.railway.app/api/whatsapp';
+export const WHATSAPP_API_BASE_URL = 'https://whatsmotor-production.up.railway.app/api/whatsapp';
 
 // Helper para fazer requisições à API do WhatsApp Engine
 export const whatsappApi = {
