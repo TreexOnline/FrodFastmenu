@@ -24,10 +24,16 @@ interface ExistingUser {
   id: string;
   email: string;
   full_name: string;
+  phone: string;
   restaurant_name: string;
   current_plan: string;
   plan_active: boolean;
+  plan_expires_at?: string;
   whatsapp_addon_active: boolean;
+  whatsapp_instance_name?: string;
+  whatsapp_connected?: boolean;
+  whatsapp_last_sync?: string;
+  whatsapp_qr_code?: string;
   created_at: string;
   role: string;
 }
@@ -83,12 +89,17 @@ export default function UserManagement() {
           id,
           email,
           full_name,
+          phone,
           restaurant_name,
-          whatsapp_number,
-          created_at,
           current_plan,
           plan_active,
-          whatsapp_addon_active
+          plan_expires_at,
+          whatsapp_addon_active,
+          whatsapp_instance_name,
+          whatsapp_connected,
+          whatsapp_last_sync,
+          whatsapp_qr_code,
+          created_at
         `)
         .order("created_at", { ascending: false });
       
@@ -118,7 +129,13 @@ export default function UserManagement() {
           plan_active: user.plan_active || false,
           whatsapp_addon_active: user.whatsapp_addon_active || false,
           created_at: user.created_at,
-          role: 'user' // Role fixo para evitar undefined
+          role: 'user', // Role fixo para evitar undefined
+          // Campos adicionais para frontend
+          plan_expires_at: user.plan_expires_at,
+          whatsapp_instance_name: user.whatsapp_instance_name,
+          whatsapp_connected: user.whatsapp_connected,
+          whatsapp_last_sync: user.whatsapp_last_sync,
+          whatsapp_qr_code: user.whatsapp_qr_code
         }));
         allUsers = validUsers;
       }
