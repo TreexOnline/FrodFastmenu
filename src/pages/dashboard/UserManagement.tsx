@@ -188,12 +188,14 @@ export default function UserManagement() {
         return;
       }
       
-      const userId = (createData as any)?.user_id;
+      const userId = (createData as any)?.user_id || (createData as any)?.id;
       if (!userId) {
         toast.error("Erro ao obter ID do usuário criado");
         setLoading(false);
         return;
       }
+      
+      console.log("User ID obtido:", userId);
       
       // 2. Criar perfil (já foi criado pela função, mas vamos garantir os campos adicionais)
       const { error: profileError } = await supabase
@@ -218,6 +220,7 @@ export default function UserManagement() {
         .from("stores")
         // @ts-ignore - Objeto insert com tipos não reconhecidos
         .insert({
+          // @ts-ignore - Campo user_id não reconhecido nos tipos
           user_id: userId,
           name: newUser.restaurantName,
           phone: newUser.phone.startsWith("+") ? newUser.phone : `+55${newUser.phone}`,
@@ -485,7 +488,7 @@ export default function UserManagement() {
                   <Label htmlFor="phone">Telefone (com DDD)</Label>
                   <Input
                     id="phone"
-                    placeholder="1899700"
+                    placeholder="18997001234"
                     value={newUser.phone}
                     onChange={(e) => setNewUser({ ...newUser, phone: e.target.value })}
                     required
