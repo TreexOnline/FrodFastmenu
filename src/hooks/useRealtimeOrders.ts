@@ -6,6 +6,30 @@
 import { useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { printOrder } from '@/utils/electronPrint';
+import { toast } from 'sonner';
+
+// Função para tocar som de notificação
+const play = () => {
+  try {
+    const audio = new Audio('/notification.mp3');
+    audio.volume = 0.5;
+    audio.play().catch(() => {
+      // Fallback para som nativo se o arquivo não existir
+      const beep = new AudioContext();
+      const oscillator = beep.createOscillator();
+      const gainNode = beep.createGain();
+      oscillator.connect(gainNode);
+      gainNode.connect(beep.destination);
+      oscillator.frequency.value = 800;
+      oscillator.type = 'sine';
+      gainNode.gain.value = 0.1;
+      oscillator.start();
+      oscillator.stop(beep.currentTime + 0.1);
+    });
+  } catch (error) {
+    console.warn('🔔 Erro ao tocar som:', error);
+  }
+};
 
 interface OrderData {
   id: string;
@@ -74,6 +98,14 @@ export function useRealtimeOrders({
           // Disparar impressão automática se estiver no Electron
           console.log('📡 [REALTIME] 🖨️ Verificando impressão automática...');
           printOrder(newOrder.id, newOrder.customer_name || undefined);
+
+          // Tocar som de notificação e mostrar toast
+          console.log('📡 [REALTIME] 🔔 Tocando som de notificação...');
+          play();
+          
+          toast.success(`🔔 Novo pedido de ${newOrder.customer_name || "cliente"}!`, {
+            duration: 6000,
+          });
 
           // Chamar callback personalizado se fornecido
           if (onNewOrder) {

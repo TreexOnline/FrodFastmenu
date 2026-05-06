@@ -2,10 +2,8 @@
    em qualquer rota do dashboard quando há usuário logado. */
 
 import { useAuth } from "@/contexts/AuthContext";
-import { useNewOrderSound } from "@/hooks/useNewOrderSound";
 
 export default function GlobalOrderNotifier() {
-  const { user } = useAuth();
-  useNewOrderSound(user?.id ?? null);
+  // Componente desativado - lógica movida para useRealtimeOrders
   return null;
 }
