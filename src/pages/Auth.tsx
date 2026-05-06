@@ -56,25 +56,13 @@ const Auth = () => {
 
   const phoneValid = useMemo(() => onlyDigits(phone).length >= 10, [phone]);
 
-  // ---- LOGIN ----
+  // ---- LOGIN DESABILITADO ----
+  // Login por telefone foi removido para usar apenas email real
+  // Use AuthGmail.tsx para login com email real
   const onLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!phoneValid) return toast.error("Informe um telefone válido");
-    if (password.length < 6) return toast.error("Senha deve ter ao menos 6 caracteres");
-    setLoading(true);
-    try {
-      const internalEmail = `${normalizeForApi(phone)}@phone.treexmenu.app`;
-      const { error } = await supabase.auth.signInWithPassword({
-        email: internalEmail,
-        password,
-      });
-      if (error) throw error;
-      // redirect via useEffect
-    } catch (err: any) {
-      toast.error("Telefone ou senha incorretos");
-    } finally {
-      setLoading(false);
-    }
+    toast.error("Login por telefone desabilitado. Use o login por email em AuthGmail.tsx");
+    setLoading(false);
   };
 
   // ---- SIGNUP STEP 1: enviar código ----

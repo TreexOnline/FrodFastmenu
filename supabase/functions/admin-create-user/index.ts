@@ -61,10 +61,15 @@ Deno.serve(async (req) => {
     // Body
     const body = await req.json().catch(() => ({}));
     const rawPhone = String(body.phone ?? "").trim();
+    const email = String(body.email ?? "").trim();
     const password = String(body.password ?? "");
     const fullName = String(body.full_name ?? "").trim();
     const restaurantName = String(body.restaurant_name ?? "").trim();
 
+    // Validação de email
+    if (!email || !email.includes("@")) {
+      return json({ error: "Email inválido" }, 400);
+    }
     if (!rawPhone || rawPhone.replace(/\D/g, "").length < 10) {
       return json({ error: "Telefone inválido" }, 400);
     }
@@ -79,7 +84,6 @@ Deno.serve(async (req) => {
     }
 
     const phone = normalizePhone(rawPhone);
-    const internalEmail = `${phone}@phone.treexmenu.app`;
 
     // Telefone já em uso?
     const { data: existing } = await admin
@@ -92,7 +96,7 @@ Deno.serve(async (req) => {
     }
 
     const { data: created, error: createErr } = await admin.auth.admin.createUser({
-      email: internalEmail,
+      email,
       password,
       email_confirm: true,
       phone,
@@ -108,7 +112,7 @@ Deno.serve(async (req) => {
         createErr?.message?.toLowerCase().includes("already") ||
         createErr?.message?.toLowerCase().includes("registered")
       ) {
-        return json({ error: "Este número já possui uma conta" }, 409);
+        return json({ error: "Este email já possui uma conta" }, 409);
       }
       console.error("admin-create-user createErr", createErr);
       return json({ error: "Falha ao criar usuário" }, 500);
@@ -118,7 +122,7 @@ Deno.serve(async (req) => {
       ok: true,
       user_id: created.user.id,
       phone,
-      internal_email: internalEmail,
+      email: email,
     });
   } catch (e) {
     console.error("admin-create-user error", e);

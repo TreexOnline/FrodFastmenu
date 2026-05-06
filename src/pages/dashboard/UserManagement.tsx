@@ -75,11 +75,22 @@ export default function UserManagement() {
     if (!user) return;
     
     try {
-      // Carregar usuários normais da view
+      // Carregar usuários diretamente da tabela profiles com join de user_roles
       const { data: usersData, error: usersError } = await supabase
-        // @ts-ignore - View admin_users_view existe no banco mas não nos tipos
-        .from("admin_users_view")
-        .select("*")
+        // @ts-ignore - Tabela profiles existe no banco mas não nos tipos
+        .from("profiles")
+        .select(`
+          id,
+          email,
+          full_name,
+          restaurant_name,
+          whatsapp_number,
+          created_at,
+          current_plan,
+          plan_active,
+          whatsapp_addon_active,
+          user_roles!inner(role)
+        `)
         .order("created_at", { ascending: false });
       
       // Carregar dados do admin atual usando auth.users
@@ -94,7 +105,7 @@ export default function UserManagement() {
       
       let allUsers: ExistingUser[] = [];
       
-      // Adicionar usuários da view se existirem
+      // Adicionar usuários da query se existirem
       if (usersData && Array.isArray(usersData)) {
         // Validar e mapear dados para garantir tipo correto
         const validUsers = usersData.filter((user: any) => 
@@ -108,7 +119,7 @@ export default function UserManagement() {
           plan_active: user.plan_active || false,
           whatsapp_addon_active: user.whatsapp_addon_active || false,
           created_at: user.created_at,
-          role: user.role || 'user'
+          role: user.role?.role || 'user'
         }));
         allUsers = validUsers;
       }
