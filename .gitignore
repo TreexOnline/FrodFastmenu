@@ -22,3 +22,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# ignorar partes do projeto
+whatsapp-engine/
+electron/
+.env

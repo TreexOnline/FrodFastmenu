@@ -77,14 +77,12 @@ export default function UserManagement() {
     try {
       // Carregar usuários normais da view
       const { data: usersData, error: usersError } = await supabase
-        // @ts-ignore - View admin_users_view existe no banco mas não nos tipos
         .from("admin_users_view")
         .select("*")
         .order("created_at", { ascending: false });
       
       // Carregar dados do admin atual usando auth.users
-      const adminClient = getSupabaseAdmin();
-      const { data: adminData, error: adminError } = await adminClient.auth.admin.getUserById(user.id);
+      const { data: adminData, error: adminError } = await supabase.auth.admin.getUserById(user.id);
       
       if (usersError || adminError) {
         toast.error("Erro ao carregar usuários");
@@ -96,21 +94,7 @@ export default function UserManagement() {
       
       // Adicionar usuários da view se existirem
       if (usersData && Array.isArray(usersData)) {
-        // Validar e mapear dados para garantir tipo correto
-        const validUsers = usersData.filter((user: any) => 
-          user.id && user.email && user.full_name && user.restaurant_name
-        ).map((user: any): ExistingUser => ({
-          id: user.id,
-          email: user.email,
-          full_name: user.full_name,
-          restaurant_name: user.restaurant_name,
-          current_plan: user.current_plan || 'free',
-          plan_active: user.plan_active || false,
-          whatsapp_addon_active: user.whatsapp_addon_active || false,
-          created_at: user.created_at,
-          role: user.role || 'user'
-        }));
-        allUsers = validUsers;
+        allUsers = usersData as ExistingUser[];
       }
       
       // Adicionar admin na lista se encontrado
@@ -214,11 +198,9 @@ export default function UserManagement() {
       
       // 3. Criar loja
       const { error: storeError } = await supabase
-        // @ts-ignore - Tabela stores existe no banco mas não nos tipos
         .from("stores")
-        // @ts-ignore - Objeto insert com tipos não reconhecidos
         .insert({
-          user_id: userId,
+          owner_id: userId,
           name: newUser.restaurantName,
           phone: newUser.phone.startsWith("+") ? newUser.phone : `+55${newUser.phone}`,
           email: newUser.email,
@@ -235,9 +217,7 @@ export default function UserManagement() {
       
       // 4. Criar role de usuário
       const { error: roleError } = await supabase
-        // @ts-ignore - Tabela user_roles existe no banco mas não nos tipos
         .from("user_roles")
-        // @ts-ignore - Objeto insert com tipos não reconhecidos
         .insert({
           user_id: userId,
           role: "user",
@@ -253,9 +233,7 @@ export default function UserManagement() {
       
       // 5. Criar menu inicial
       const { data: menuData, error: menuError } = await supabase
-        // @ts-ignore - Tabela menus existe no banco mas não nos tipos
         .from("menus")
-        // @ts-ignore - Objeto insert com tipos não reconhecidos
         .insert({
           user_id: userId,
           name: "Cardápio Principal",
@@ -275,9 +253,7 @@ export default function UserManagement() {
       
       // 6. Criar configurações do menu
       await supabase
-        // @ts-ignore - Tabela menu_settings existe no banco mas não nos tipos
         .from("menu_settings")
-        // @ts-ignore - Objeto insert com tipos não reconhecidos
         .insert({
           menu_id: menuData.id,
           user_id: userId,
@@ -354,9 +330,7 @@ export default function UserManagement() {
     
     try {
       const { error } = await supabase
-        // @ts-ignore - Tabela profiles existe no banco mas não nos tipos
         .from("profiles")
-        // @ts-ignore - Objeto update com tipos não reconhecidos
         .update({
           current_plan: plan,
           plan_active: plan !== "free",
@@ -387,9 +361,7 @@ export default function UserManagement() {
     
     try {
       const { error } = await supabase
-        // @ts-ignore - Tabela profiles existe no banco mas não nos tipos
         .from("profiles")
-        // @ts-ignore - Objeto update com tipos não reconhecidos
         .update({
           whatsapp_addon_active: enabled,
           whatsapp_addon_expires_at: enabled ? "2099-12-31" : null,

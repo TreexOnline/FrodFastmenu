@@ -311,10 +311,4 @@ BEGIN
     
     IF profile_exists AND role_exists AND store_exists THEN
         RAISE NOTICE '🎉 USUÁRIO ADMIN CRIADO COM SUCESSO!';
-        RAISE NOTICE '🔑 Acesse: https://supabase.com/dashboard/project/kfujkvihymclesabqmsz';
-        RAISE NOTICE '📧 Login: admin@frodfast.com';
-        RAISE NOTICE '🔐 Senha: (definir via authentication)';
-    ELSE
-        RAISE NOTICE '❌ ERRO: Alguns componentes não foram criados corretamente';
-    END IF;
-END $$;
+        RAISE NOTICE '  

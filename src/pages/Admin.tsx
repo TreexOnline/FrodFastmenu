@@ -494,22 +494,63 @@ const Admin = () => {
                                     : "Mensal"}
                               </Badge>
                               {u.plan_expires_at && (
-                                <p className="mt-1 text-[10px] text-muted-foreground">
-                                  até{" "}
-                                  {new Date(u.plan_expires_at).toLocaleDateString(
-                                    "pt-BR"
-                                  )}
-                                </p>
+                                <div className="mt-1 space-y-0.5">
+                                  <p className="text-[10px] text-muted-foreground">
+                                    expira em {new Date(u.plan_expires_at).toLocaleDateString("pt-BR")}
+                                  </p>
+                                  {(() => {
+                                    const daysLeft = Math.ceil((new Date(u.plan_expires_at).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
+                                    return (
+                                      <p className={`text-[10px] font-medium ${
+                                        daysLeft <= 7 ? 'text-red-600' : 
+                                        daysLeft <= 30 ? 'text-amber-600' : 
+                                        'text-emerald-600'
+                                      }`}>
+                                        {daysLeft > 0 ? `${daysLeft} dias restantes` : 'expirado'}
+                                      </p>
+                                    );
+                                  })()}
+                                </div>
                               )}
                             </div>
                           ) : (
-                            <Badge variant="outline">Trial</Badge>
+                            <div>
+                              <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">
+                                Trial
+                              </Badge>
+                              {u.trial_ends_at && (
+                                <div className="mt-1 space-y-0.5">
+                                  <p className="text-[10px] text-muted-foreground">
+                                    expira em {new Date(u.trial_ends_at).toLocaleDateString("pt-BR")}
+                                  </p>
+                                  {(() => {
+                                    const daysLeft = Math.ceil((new Date(u.trial_ends_at).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
+                                    return (
+                                      <p className={`text-[10px] font-medium ${
+                                        daysLeft <= 3 ? 'text-red-600' : 
+                                        daysLeft <= 7 ? 'text-amber-600' : 
+                                        'text-blue-600'
+                                      }`}>
+                                        {daysLeft > 0 ? `${daysLeft} dias restantes` : 'expirado'}
+                                      </p>
+                                    );
+                                  })()}
+                                </div>
+                              )}
+                            </div>
                           )}
                           {u.whatsapp_addon_active && (
-                            <Badge className="bg-primary/15 text-primary hover:bg-primary/20">
-                              <Bot className="mr-1 h-3 w-3" />
-                              IA WhatsApp
-                            </Badge>
+                            <div>
+                              <Badge className="bg-primary/15 text-primary hover:bg-primary/20">
+                                <Bot className="mr-1 h-3 w-3" />
+                                IA WhatsApp
+                              </Badge>
+                              {u.whatsapp_addon_expires_at && (
+                                <p className="mt-1 text-[10px] text-muted-foreground">
+                                  addon expira em {new Date(u.whatsapp_addon_expires_at).toLocaleDateString("pt-BR")}
+                                </p>
+                              )}
+                            </div>
                           )}
                         </div>
                       </TableCell>
@@ -695,17 +736,79 @@ const Admin = () => {
 
       {/* Gerenciar plano */}
       <Dialog open={!!planTarget} onOpenChange={(o) => !o && setPlanTarget(null)}>
-        <DialogContent>
+        <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Gerenciar plano</DialogTitle>
+            <DialogTitle className="flex items-center gap-2">
+              <Crown className="h-5 w-5 text-amber-600" />
+              Gerenciar Plano
+            </DialogTitle>
             <DialogDescription>
-              {planTarget?.full_name || planTarget?.email}
-              {planTarget?.plan_active && planTarget?.plan_expires_at && (
-                <span className="mt-1 block text-xs">
-                  Atualmente <b>{planTarget.plan_type}</b> · expira em{" "}
-                  {new Date(planTarget.plan_expires_at).toLocaleDateString("pt-BR")}
-                </span>
-              )}
+              <div className="space-y-2">
+                <div className="font-medium">{planTarget?.full_name || planTarget?.email}</div>
+                <div className="text-xs text-muted-foreground">
+                  {planTarget?.restaurant_name && `Restaurante: ${planTarget.restaurant_name}`}
+                </div>
+                
+                {/* Status atual */}
+                <div className="mt-3 rounded-lg border bg-muted/30 p-3">
+                  <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+                    Status Atual
+                  </div>
+                  {planTarget?.plan_active ? (
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <Badge className="bg-emerald-500/15 text-emerald-700 hover:bg-emerald-500/20 dark:text-emerald-400">
+                          {planTarget.plan_type === "annual"
+                            ? "Anual"
+                            : planTarget.plan_type === "combo"
+                              ? "Combo"
+                              : "Mensal"}
+                        </Badge>
+                        {planTarget.plan_expires_at && (() => {
+                          const daysLeft = Math.ceil((new Date(planTarget.plan_expires_at).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
+                          return (
+                            <span className={`text-xs font-medium ${
+                              daysLeft <= 7 ? 'text-red-600' : 
+                              daysLeft <= 30 ? 'text-amber-600' : 
+                              'text-emerald-600'
+                            }`}>
+                              {daysLeft > 0 ? `${daysLeft} dias` : 'expirado'}
+                            </span>
+                          );
+                        })()}
+                      </div>
+                      {planTarget.plan_expires_at && (
+                        <p className="text-xs text-muted-foreground">
+                          Expira em {new Date(planTarget.plan_expires_at).toLocaleDateString("pt-BR")}
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="space-y-1">
+                      <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">
+                        Trial
+                      </Badge>
+                      {planTarget?.trial_ends_at && (() => {
+                        const daysLeft = Math.ceil((new Date(planTarget.trial_ends_at).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
+                        return (
+                          <div className="mt-1">
+                            <p className="text-xs text-muted-foreground">
+                              Expira em {new Date(planTarget.trial_ends_at).toLocaleDateString("pt-BR")}
+                            </p>
+                            <p className={`text-xs font-medium ${
+                              daysLeft <= 3 ? 'text-red-600' : 
+                              daysLeft <= 7 ? 'text-amber-600' : 
+                              'text-blue-600'
+                            }`}>
+                              {daysLeft > 0 ? `${daysLeft} dias restantes` : 'expirado'}
+                            </p>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  )}
+                </div>
+              </div>
             </DialogDescription>
           </DialogHeader>
 
@@ -719,9 +822,24 @@ const Admin = () => {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="monthly">Mensal — R$ 148</SelectItem>
-                  <SelectItem value="combo">Combo — R$ 380 / 3 meses</SelectItem>
-                  <SelectItem value="annual">Anual — R$ 1.148 / ano</SelectItem>
+                  <SelectItem value="monthly">
+                    <div className="flex items-center justify-between w-full">
+                      <span>Mensal</span>
+                      <span className="text-muted-foreground">R$ 148/mês</span>
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="combo">
+                    <div className="flex items-center justify-between w-full">
+                      <span>Combo</span>
+                      <span className="text-muted-foreground">R$ 380/3 meses</span>
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="annual">
+                    <div className="flex items-center justify-between w-full">
+                      <span>Anual</span>
+                      <span className="text-muted-foreground">R$ 1.148/ano</span>
+                    </div>
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -739,8 +857,31 @@ const Admin = () => {
               />
               <p className="mt-1 text-xs text-muted-foreground">
                 Quantos meses de acesso a partir de hoje.
+                {planType === "monthly" && planMonths > 1 && ` (${planMonths} × R$ 148 = R$ ${(planMonths * 148).toLocaleString('pt-BR')})`}
+                {planType === "combo" && planMonths > 3 && ` (${Math.ceil(planMonths/3)} × R$ 380 = R$ ${(Math.ceil(planMonths/3) * 380).toLocaleString('pt-BR')})`}
+                {planType === "annual" && planMonths > 12 && ` (${Math.ceil(planMonths/12)} × R$ 1.148 = R$ ${(Math.ceil(planMonths/12) * 1148).toLocaleString('pt-BR')})`}
               </p>
             </div>
+
+            {/* Preview da nova data de expiração */}
+            {planMonths > 0 && (
+              <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 dark:border-blue-800 dark:bg-blue-950">
+                <p className="text-xs font-semibold text-blue-700 dark:text-blue-300">
+                  Nova data de expiração
+                </p>
+                <p className="text-xs text-blue-600 dark:text-blue-400">
+                  {(() => {
+                    const newDate = new Date();
+                    newDate.setMonth(newDate.getMonth() + planMonths);
+                    return newDate.toLocaleDateString("pt-BR", {
+                      day: '2-digit',
+                      month: '2-digit', 
+                      year: 'numeric'
+                    });
+                  })()}
+                </p>
+              </div>
+            )}
           </div>
 
           <DialogFooter className="flex-col gap-2 sm:flex-row sm:justify-between">
@@ -751,6 +892,7 @@ const Admin = () => {
                 disabled={planSaving}
                 className="text-destructive hover:text-destructive"
               >
+                <Crown className="mr-2 h-4 w-4" />
                 Remover plano
               </Button>
             )}
@@ -760,6 +902,7 @@ const Admin = () => {
               </Button>
               <Button onClick={() => handleSavePlan(true)} disabled={planSaving}>
                 {planSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                <Crown className="mr-2 h-4 w-4" />
                 {planTarget?.plan_active ? "Atualizar plano" : "Conceder plano"}
               </Button>
             </div>
