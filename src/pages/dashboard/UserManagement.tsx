@@ -214,27 +214,8 @@ export default function UserManagement() {
         return;
       }
       
-      // 3. Criar loja
-      const { error: storeError } = await supabase
-        // @ts-ignore - Tabela stores existe no banco mas não nos tipos
-        .from("stores")
-        // @ts-ignore - Objeto insert com tipos não reconhecidos
-        .insert({
-          // @ts-ignore - Campo user_id não reconhecido nos tipos
-          user_id: userId,
-          name: newUser.restaurantName,
-          phone: newUser.phone.startsWith("+") ? newUser.phone : `+55${newUser.phone}`,
-          email: newUser.email,
-          whatsapp_enabled: newUser.whatsappEnabled,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        });
-      
-      if (storeError) {
-        toast.error("Erro ao criar loja: " + storeError.message);
-        setLoading(false);
-        return;
-      }
+      // 3. Loja criada automaticamente pela Edge Function admin-create-user
+      // Não é necessário criar store aqui para evitar duplicação
       
       // 4. Criar role de usuário
       const { error: roleError } = await supabase
