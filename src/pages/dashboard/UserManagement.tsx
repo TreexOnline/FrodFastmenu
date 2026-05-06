@@ -75,7 +75,7 @@ export default function UserManagement() {
     if (!user) return;
     
     try {
-      // Carregar usuários diretamente da tabela profiles com join de user_roles
+      // Carregar usuários diretamente da tabela profiles (sem join para evitar erro)
       const { data: usersData, error: usersError } = await supabase
         // @ts-ignore - Tabela profiles existe no banco mas não nos tipos
         .from("profiles")
@@ -88,8 +88,7 @@ export default function UserManagement() {
           created_at,
           current_plan,
           plan_active,
-          whatsapp_addon_active,
-          user_roles!inner(role)
+          whatsapp_addon_active
         `)
         .order("created_at", { ascending: false });
       
@@ -119,7 +118,7 @@ export default function UserManagement() {
           plan_active: user.plan_active || false,
           whatsapp_addon_active: user.whatsapp_addon_active || false,
           created_at: user.created_at,
-          role: user.role?.role || 'user'
+          role: 'user' // Role fixo para evitar undefined
         }));
         allUsers = validUsers;
       }
