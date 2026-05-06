@@ -186,6 +186,7 @@ export default function UserManagement() {
       // 1. Criar usuário usando a função Edge admin-create-user
       const { data: createData, error: createError } = await supabase.functions.invoke("admin-create-user", {
         body: {
+          email: newUser.email,
           phone: newUser.phone.startsWith("+") ? newUser.phone : `+55${newUser.phone}`,
           password: newUser.password,
           full_name: newUser.fullName,
