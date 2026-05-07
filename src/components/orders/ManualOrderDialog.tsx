@@ -62,12 +62,20 @@ export function ManualOrderDialog({ open, onOpenChange, onCreated, appendToOrder
   const [orderType, setOrderType] = useState<ManualType>("delivery");
   const [tableNumber, setTableNumber] = useState("");
   const [notes, setNotes] = useState("");
+  
+  // Endereço para delivery
+  const [addressStreet, setAddressStreet] = useState("");
+  const [addressNumber, setAddressNumber] = useState("");
+  const [addressNeighborhood, setAddressNeighborhood] = useState("");
+  const [addressComplement, setAddressComplement] = useState("");
+  const [addressZip, setAddressZip] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   // restaurantName + auto print do menu selecionado
   const [autoPrint, setAutoPrint] = useState(false);
   const [splitByCategory, setSplitByCategory] = useState(false);
   const [restaurantName, setRestaurantName] = useState("Pedido manual");
+  const [deliveryFee, setDeliveryFee] = useState(0);
 
   // Carrega cardápios do usuário
   useEffect(() => {
@@ -106,7 +114,7 @@ export function ManualOrderDialog({ open, onOpenChange, onCreated, appendToOrder
         supabase.from("categories").select("id,name").eq("menu_id", menuId).order("position"),
         supabase
           .from("menu_settings")
-          .select("display_name,auto_print,print_split_by_category")
+          .select("display_name,auto_print,print_split_by_category,delivery_fee")
           .eq("menu_id", menuId)
           .maybeSingle(),
       ]);
@@ -114,6 +122,7 @@ export function ManualOrderDialog({ open, onOpenChange, onCreated, appendToOrder
       setCategories((cs || []) as any);
       setAutoPrint(!!(ms as any)?.auto_print);
       setSplitByCategory(!!(ms as any)?.print_split_by_category);
+      setDeliveryFee(Number((ms as any)?.delivery_fee || 0));
       const menu = menus.find((m) => m.id === menuId);
       setRestaurantName((ms as any)?.display_name || menu?.name || "Pedido manual");
       setLoading(false);
@@ -160,6 +169,8 @@ export function ManualOrderDialog({ open, onOpenChange, onCreated, appendToOrder
 
   const subtotal = useMemo(() => cartSubtotal(cart), [cart]);
   const totalItems = cart.reduce((a, b) => a + b.quantity, 0);
+  const finalDeliveryFee = orderType === "delivery" ? deliveryFee : 0;
+  const totalAmount = subtotal + finalDeliveryFee;
 
   const addProduct = (p: ProductLite, addons: CartItemAddon[], qty: number, itemNotes: string) => {
     setCart((prev) => {
@@ -302,6 +313,11 @@ export function ManualOrderDialog({ open, onOpenChange, onCreated, appendToOrder
         return;
       }
       const finalCustomerName = nameTrim;
+      
+      // Construir endereço para delivery
+      const customerAddress = orderType === "delivery" 
+        ? `${addressStreet.trim()}, ${addressNumber.trim()} — ${addressNeighborhood.trim()}${addressComplement.trim() ? ` (${addressComplement.trim()})` : ""}${addressZip.trim() ? ` · CEP ${addressZip.trim()}` : ""}`
+        : null;
 
       const { data: order, error: orderErr } = await supabase
         .from("orders")
@@ -310,7 +326,7 @@ export function ManualOrderDialog({ open, onOpenChange, onCreated, appendToOrder
           user_id: user.id,
           customer_name: finalCustomerName,
           customer_phone: customerPhone.trim() || null,
-          customer_address: null,
+          customer_address: customerAddress,
           total_amount: totalAmount,
           status: "new",
           source: "manual",
@@ -339,7 +355,7 @@ export function ManualOrderDialog({ open, onOpenChange, onCreated, appendToOrder
             id: order.id,
             customer_name: finalCustomerName,
             customer_phone: customerPhone.trim() || null,
-            customer_address: null,
+            customer_address: customerAddress,
             total_amount: totalAmount,
             notes: notes.trim() || null,
             created_at: (order as any).created_at,
@@ -539,6 +555,48 @@ export function ManualOrderDialog({ open, onOpenChange, onCreated, appendToOrder
                       </div>
                     )}
 
+                    {orderType === "delivery" && (
+                      <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-2.5">
+                        <Label className="text-[10px] font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
+                          <Bike className="mr-1 inline h-3 w-3" /> Endereço de entrega <span className="text-rose-500">*</span>
+                        </Label>
+                        <div className="mt-2 space-y-2">
+                          <div className="grid grid-cols-3 gap-2">
+                            <Input
+                              value={addressStreet}
+                              onChange={(e) => setAddressStreet(e.target.value)}
+                              placeholder="Rua"
+                              className="col-span-2 h-9"
+                            />
+                            <Input
+                              value={addressNumber}
+                              onChange={(e) => setAddressNumber(e.target.value)}
+                              placeholder="Número"
+                              className="h-9"
+                            />
+                          </div>
+                          <Input
+                            value={addressNeighborhood}
+                            onChange={(e) => setAddressNeighborhood(e.target.value)}
+                            placeholder="Bairro"
+                            className="h-9"
+                          />
+                          <Input
+                            value={addressComplement}
+                            onChange={(e) => setAddressComplement(e.target.value)}
+                            placeholder="Complemento (opcional)"
+                            className="h-9"
+                          />
+                          <Input
+                            value={addressZip}
+                            onChange={(e) => setAddressZip(e.target.value)}
+                            placeholder="CEP"
+                            className="h-9"
+                          />
+                        </div>
+                      </div>
+                    )}
+
                     <div>
                       <Label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
                         <User className="mr-1 inline h-3 w-3" /> Cliente <span className="text-rose-500">*</span>
@@ -562,9 +620,15 @@ export function ManualOrderDialog({ open, onOpenChange, onCreated, appendToOrder
                   </>
                 )}
 
+                {orderType === "delivery" && finalDeliveryFee > 0 && (
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <span>Taxa de entrega:</span>
+                    <span>R$ {finalDeliveryFee.toFixed(2)}</span>
+                  </div>
+                )}
                 <div className="flex items-center justify-between border-t border-dashed border-border pt-2 text-sm">
                   <span className="font-semibold">{appendToOrder ? "A adicionar" : "Total"}</span>
-                  <span className="text-lg font-bold text-primary">R$ {subtotal.toFixed(2)}</span>
+                  <span className="text-lg font-bold text-primary">R$ {totalAmount.toFixed(2)}</span>
                 </div>
 
                 <Button

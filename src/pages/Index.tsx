@@ -211,7 +211,7 @@ const Index = () => {
         </div>
         <h1 className="mt-5 text-2xl font-bold">Cardápio não encontrado</h1>
         <p className="mt-2 max-w-md text-muted-foreground">
-          Não encontramos um cardápio para <strong>"{slug?.original}"</strong>. 
+          Não encontramos um cardápio para <strong>"{typeof slug?.original === 'string' ? slug?.original : 'desconhecido'}"</strong>. 
           Verifique o endereço ou entre em contato com o restaurante.
         </p>
         <div className="mt-6 space-y-2">
@@ -775,83 +775,6 @@ const Index = () => {
             <ShieldCheck className="mr-1.5 inline h-4 w-4 text-primary" />
             15 dias grátis · Cancele quando quiser · Sem multa
           </p>
-
-          {/* ADICIONAL — IA WhatsApp */}
-          <div className="mx-auto mt-16 max-w-5xl">
-            <div className="mb-6 text-center">
-              <span className="inline-flex items-center gap-2 rounded-full border border-accent/40 bg-accent/10 px-3 py-1 text-xs font-bold uppercase tracking-wider text-accent">
-                <Sparkles className="h-3.5 w-3.5" />
-                Adicional opcional
-              </span>
-              <h3 className="mt-4 text-2xl font-bold tracking-tight sm:text-3xl">
-                Turbine seu atendimento com IA
-              </h3>
-              <p className="mt-2 text-muted-foreground">
-                Um complemento opcional para quem quer atendimento 24/7 totalmente automatizado.
-              </p>
-            </div>
-
-            <div className="relative overflow-hidden rounded-2xl border border-primary/30 bg-gradient-to-br from-primary/10 via-card to-card p-7 shadow-brand md:p-9">
-              {/* glows */}
-              <div className="pointer-events-none absolute -top-16 -right-10 h-56 w-56 rounded-full bg-primary/25 blur-3xl" />
-              <div className="pointer-events-none absolute -bottom-20 -left-10 h-56 w-56 rounded-full bg-accent/20 blur-3xl" />
-
-              <div className="relative grid gap-8 md:grid-cols-[1.4fr_1fr] md:items-center">
-                <div>
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-xl gradient-brand text-primary-foreground shadow-brand">
-                      <Bot className="h-6 w-6" />
-                    </div>
-                    <div>
-                      <h4 className="text-xl font-bold">Atendente IA no WhatsApp</h4>
-                      <p className="text-sm text-muted-foreground">Adicional independente do plano</p>
-                    </div>
-                  </div>
-
-                  <ul className="mt-5 grid gap-2.5 sm:grid-cols-2">
-                    {[
-                      "Atendimento 24h por dia",
-                      "Entende gírias e erros",
-                      "Tira pedidos sozinha",
-                      "Conexão exclusiva via WhatsApp",
-                    ].map((f) => (
-                      <li key={f} className="flex items-start gap-2 text-sm">
-                        <Check className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-                        <span>{f}</span>
-                      </li>
-                    ))}
-                  </ul>
-
-                  <p className="mt-5 text-xs text-muted-foreground">
-                    Pode ser ativado ou cancelado a qualquer momento, separado do seu plano principal.
-                  </p>
-                </div>
-
-                <div className="rounded-xl border border-border bg-background/60 p-6 backdrop-blur">
-                  <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    Adicional
-                  </div>
-                  <div className="mt-2 flex items-baseline gap-1">
-                    <span className="text-4xl font-bold tracking-tight">R$ 99</span>
-                    <span className="text-muted-foreground">/mês</span>
-                  </div>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Por instância de WhatsApp conectada
-                  </p>
-
-                  <Button asChild variant="cta" size="lg" className="mt-5 w-full">
-                    <a href={WHATSAPP_SIGNUP_URL} target="_blank" rel="noopener noreferrer">
-                      Adicionar IA <ArrowRight />
-                    </a>
-                  </Button>
-
-                  <p className="mt-3 text-center text-[11px] text-muted-foreground">
-                    Soma-se ao valor do seu plano
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
         </div>
       </section>
 

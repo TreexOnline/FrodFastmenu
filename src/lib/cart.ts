@@ -167,7 +167,7 @@ export function buildWhatsAppMessage(p: BuildMessageParams): string {
   lines.push("");
 
   lines.push(`*Subtotal:* R$ ${p.subtotal.toFixed(2)}`);
-  if (p.checkout.orderType === "delivery" && p.deliveryFee > 0) {
+  if (p.checkout.orderType === "delivery") {
     lines.push(`*Taxa de entrega:* R$ ${p.deliveryFee.toFixed(2)}`);
   }
   lines.push(`*Total:* R$ ${p.total.toFixed(2)}`);

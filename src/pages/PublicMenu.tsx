@@ -766,7 +766,7 @@ const PublicMenu = () => {
       <Sheet open={!!productSheet} onOpenChange={(o) => !o && setProductSheet(null)}>
         <SheetContent
           side="bottom"
-          className="max-h-[92vh] overflow-y-auto rounded-t-2xl border-0 p-0"
+          className="max-h-[92vh] overflow-y-auto rounded-t-2xl border-0 p-0 [&_[data-radix-dialog-close]]:hidden"
           style={{ background: theme.surface, color: theme.text }}
         >
           {productSheet && (
@@ -1586,7 +1586,7 @@ function CheckoutFlow({
       // Observação geral do pedido removida da UI — apenas tipo/pagamento/mensagem
       // estruturada continuam sendo anexados como histórico interno.
       const notesTxt = [
-        `Pagamento: ${PAYMENT_LABEL[data.payment]}${data.payment === "cash" && data.needsChange && data.changeFor ? ` (troco para R$ ${Number(data.changeFor).toFixed(2)})` : ""}`,
+        `Pagamento: ${PAYMENT_LABEL[data.payment]}`,
         `__msg__: ${message}`,
       ].filter(Boolean).join(" · ");
 
