@@ -4,54 +4,58 @@ const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };
+
+function json(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: {
+      ...corsHeaders,
+      "Content-Type": "application/json",
+    },
+  });
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+    return new Response("ok", {
+      status: 200,
+      headers: corsHeaders,
+    });
   }
 
   try {
     const authHeader = req.headers.get("Authorization");
-    if (!authHeader) {
-      return new Response(JSON.stringify({ error: "Missing auth" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
 
-    const { user_id } = await req.json();
-    if (!user_id) {
-      return new Response(JSON.stringify({ error: "user_id required" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    if (!authHeader) {
+      return json({ error: "Missing auth" }, 401);
     }
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
 
+    // 🔐 user client
     const userClient = createClient(supabaseUrl, anonKey, {
-      global: { headers: { Authorization: authHeader } },
+      global: {
+        headers: {
+          Authorization: authHeader,
+        },
+      },
     });
-    const { data: userData, error: userErr } = await userClient.auth.getUser();
+
+    const { data: userData, error: userErr } =
+      await userClient.auth.getUser();
+
     if (userErr || !userData.user) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return json({ error: "Unauthorized" }, 401);
     }
 
-    if (userData.user.id === user_id) {
-      return new Response(
-        JSON.stringify({ error: "Você não pode excluir sua própria conta" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
+    // 🔐 admin client
     const admin = createClient(supabaseUrl, serviceKey);
 
+    // 🔐 check admin
     const { data: roleRow } = await admin
       .from("user_roles")
       .select("role")
@@ -60,23 +64,35 @@ Deno.serve(async (req) => {
       .maybeSingle();
 
     if (!roleRow) {
-      return new Response(JSON.stringify({ error: "Forbidden" }), {
-        status: 403,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return json({ error: "Forbidden" }, 403);
     }
 
-    const { error: delErr } = await admin.auth.admin.deleteUser(user_id);
-    if (delErr) throw delErr;
+    // 📦 body
+    const body = await req.json().catch(() => ({}));
+    const { user_id } = body;
 
-    return new Response(JSON.stringify({ ok: true }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  } catch (e: any) {
-    console.error("admin-delete-user error:", e);
-    return new Response(JSON.stringify({ error: "Erro interno. Tente novamente." }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    if (!user_id) {
+      return json({ error: "user_id required" }, 400);
+    }
+
+    // 🛡️ self-deletion protection
+    if (userData.user.id === user_id) {
+      return json({ error: "Você não pode excluir sua própria conta" }, 400);
+    }
+
+    // 🗑️ Delete user from auth (cascades to profiles, roles, stores)
+    console.log(`Deletando usuário ${user_id}...`);
+    const { error: delErr } = await admin.auth.admin.deleteUser(user_id);
+    
+    if (delErr) {
+      console.error("Erro ao deletar usuário:", delErr);
+      return json({ error: "Erro ao excluir usuário" }, 500);
+    }
+
+    console.log(`Usuário ${user_id} excluído com sucesso`);
+    return json({ ok: true });
+  } catch (err) {
+    console.error("admin-delete-user error:", err);
+    return json({ error: "Erro interno. Tente novamente." }, 500);
   }
 });

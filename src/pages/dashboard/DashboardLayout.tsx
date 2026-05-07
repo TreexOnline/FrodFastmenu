@@ -17,7 +17,7 @@ const baseItems = [
   { to: "/dashboard/configuracoes", label: "Configurações", icon: Settings },
   { to: "/dashboard/plano", label: "Plano", icon: CreditCard },
 ];
-const adminItem = { to: "/dashboard/usuarios", label: "Usuários", icon: Shield, end: false as boolean | undefined };
+const adminPageItem = { to: "/admin", label: "Administração", icon: Shield, end: false };
 
 const DashboardLayout = () => {
   const { user, loading, signOut } = useAuth();
@@ -28,15 +28,30 @@ const DashboardLayout = () => {
 
   useEffect(() => {
     if (!user) return;
-    supabase.from("profiles").select("restaurant_name").eq("id", user.id).maybeSingle().then(({ data }) => {
-      if (data?.restaurant_name) setRestaurantName(data.restaurant_name);
-    });
-    supabase.from("user_roles").select("role").eq("user_id", user.id).eq("role", "admin").maybeSingle().then(({ data }) => {
-      setIsAdmin(!!data);
-    });
+    
+    // Carregar nome do restaurante
+    supabase.from("profiles").select("restaurant_name").eq("id", user.id).maybeSingle()
+      .then(({ data, error }) => {
+        if (error) {
+          console.error("Erro ao carregar nome do restaurante:", error);
+        } else if (data?.restaurant_name) {
+          setRestaurantName(data.restaurant_name);
+        }
+      });
+    
+    // Verificar se é admin
+    supabase.from("user_roles").select("role").eq("user_id", user.id).eq("role", "admin").maybeSingle()
+      .then(({ data, error }) => {
+        if (error) {
+          console.error("Erro ao verificar permissões de admin:", error);
+          setIsAdmin(false);
+        } else {
+          setIsAdmin(!!data);
+        }
+      });
   }, [user]);
 
-  const items = isAdmin ? [...baseItems, adminItem] : baseItems;
+  const items = isAdmin ? [...baseItems, adminPageItem] : baseItems;
 
   // Não bloqueia o render com spinner fullscreen.
   // Se ainda está carregando a sessão, deixa a UI base aparecer; só redireciona quando confirmamos que NÃO há usuário.

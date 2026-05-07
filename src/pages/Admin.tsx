@@ -100,10 +100,13 @@ const Admin = () => {
 
   // Criar novo usuário
   const [createOpen, setCreateOpen] = useState(false);
+  const [newEmail, setNewEmail] = useState("");
   const [newPhone, setNewPhone] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [newFullName, setNewFullName] = useState("");
   const [newRestaurant, setNewRestaurant] = useState("");
+  const [newPlan, setNewPlan] = useState("free");
+  const [newWhatsAppEnabled, setNewWhatsAppEnabled] = useState(true);
   const [creating, setCreating] = useState(false);
 
   // Verifica admin
@@ -132,10 +135,14 @@ const Admin = () => {
 
   const loadUsers = async () => {
     setLoading(true);
+    console.log("Carregando usuários...");
     const { data, error } = await supabase.functions.invoke("admin-list-users");
+    console.log("Resposta da função:", { data, error });
     if (error) {
+      console.error("Erro ao carregar usuários:", error);
       toast.error("Falha ao carregar usuários");
     } else {
+      console.log("Usuários recebidos:", (data as any)?.users);
       setUsers((data as any)?.users ?? []);
     }
     setLoading(false);
@@ -280,17 +287,37 @@ const Admin = () => {
   };
 
   const handleCreateUser = async () => {
-    if (!newPhone.trim() || newPassword.length < 6 || !newFullName.trim() || !newRestaurant.trim()) {
+    // Validações
+    if (!newEmail.trim() || !newPhone.trim() || newPassword.length < 6 || !newFullName.trim() || !newRestaurant.trim()) {
       toast.error("Preencha todos os campos. Senha mínima de 6 caracteres.");
       return;
     }
+
+    // Validação de email
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(newEmail.trim())) {
+      toast.error("Email inválido. Digite um email válido.");
+      return;
+    }
+
+    // Validação de telefone brasileiro
+    const phoneRegex = /^\d{10,11}$/;
+    const cleanPhone = newPhone.replace(/\D/g, '');
+    if (!phoneRegex.test(cleanPhone)) {
+      toast.error("Telefone inválido. Digite apenas números com DDD (ex: 18997001234)");
+      return;
+    }
+
     setCreating(true);
     const { data, error } = await supabase.functions.invoke("admin-create-user", {
       body: {
-        phone: newPhone.trim(),
+        email: newEmail.trim(),
+        phone: newPhone.startsWith("+") ? newPhone : `+55${cleanPhone}`,
         password: newPassword,
         full_name: newFullName.trim(),
         restaurant_name: newRestaurant.trim(),
+        plan: newPlan,
+        whatsapp_enabled: newWhatsAppEnabled,
       },
     });
     setCreating(false);
@@ -300,15 +327,18 @@ const Admin = () => {
     }
     toast.success("Usuário criado com sucesso!");
     setCreateOpen(false);
+    setNewEmail("");
     setNewPhone("");
     setNewPassword("");
     setNewFullName("");
     setNewRestaurant("");
+    setNewPlan("free");
+    setNewWhatsAppEnabled(true);
     loadUsers();
   };
 
-  // Oculta administradores da lista — admin não deve ver/excluir a si mesmo
-  const visibleUsers = users.filter((u) => !u.roles.includes("admin"));
+  // Oculta administradores da lista — mas mostra o próprio usuário admin para referência
+  const visibleUsers = users.filter((u) => !u.roles.includes("admin") || u.id === user?.id);
 
   const filtered = visibleUsers.filter((u) => {
     const q = search.toLowerCase();
@@ -464,14 +494,14 @@ const Admin = () => {
                       <TableCell>
                         <div className="flex items-center gap-2">
                           <div>
-                            <p className="font-medium">
+                            <div className="font-medium">
                               {u.full_name || "—"}
                               {isAdminRow && (
                                 <Badge className="ml-2 bg-primary/15 text-primary hover:bg-primary/20">
                                   Admin
                                 </Badge>
                               )}
-                            </p>
+                            </div>
                             <p className="text-xs text-muted-foreground">
                               {u.email}
                             </p>
@@ -742,8 +772,7 @@ const Admin = () => {
               <Crown className="h-5 w-5 text-amber-600" />
               Gerenciar Plano
             </DialogTitle>
-            <DialogDescription>
-              <div className="space-y-2">
+            <div className="text-sm text-muted-foreground space-y-2">
                 <div className="font-medium">{planTarget?.full_name || planTarget?.email}</div>
                 <div className="text-xs text-muted-foreground">
                   {planTarget?.restaurant_name && `Restaurante: ${planTarget.restaurant_name}`}
@@ -809,7 +838,6 @@ const Admin = () => {
                   )}
                 </div>
               </div>
-            </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 py-2">
@@ -1016,6 +1044,18 @@ const Admin = () => {
           <div className="space-y-3 py-2">
             <div>
               <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Email
+              </label>
+              <Input
+                type="email"
+                value={newEmail}
+                onChange={(e) => setNewEmail(e.target.value)}
+                placeholder="usuario@gmail.com"
+                maxLength={120}
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 Nome do responsável
               </label>
               <Input
@@ -1049,6 +1089,33 @@ const Admin = () => {
               <p className="mt-1 text-xs text-muted-foreground">
                 Será usado para login. DDI 55 adicionado automaticamente.
               </p>
+            </div>
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Plano
+              </label>
+              <Select value={newPlan} onValueChange={setNewPlan}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione o plano" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="free">Gratuito</SelectItem>
+                  <SelectItem value="basic">Básico</SelectItem>
+                  <SelectItem value="premium">Premium</SelectItem>
+                  <SelectItem value="enterprise">Enterprise</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                id="whatsapp"
+                checked={newWhatsAppEnabled}
+                onChange={(e) => setNewWhatsAppEnabled(e.target.checked)}
+              />
+              <label htmlFor="whatsapp" className="text-sm font-medium">
+                Habilitar WhatsApp
+              </label>
             </div>
             <div>
               <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">

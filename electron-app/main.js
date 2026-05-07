@@ -255,8 +255,9 @@ function createWindow() {
       window.print = function() {
         console.log('🖨️ [INTERCEPT] window.print() interceptado');
         
-        // Capturar HTML da página atual
-        const html = document.documentElement.outerHTML;
+        // Tentar capturar apenas o pedido, fallback para página inteira
+        const orderElement = document.querySelector('.pedido, .order, .receipt, .cupom, [data-order-id]');
+        const html = orderElement ? orderElement.outerHTML : document.documentElement.outerHTML;
         
         // Enviar para impressão silenciosa do Electron
         if (window.electronAPI && window.electronAPI.printOrder) {
@@ -276,7 +277,10 @@ function createWindow() {
         e.preventDefault();
         e.stopPropagation();
         
-        const html = document.documentElement.outerHTML;
+        // Tentar capturar apenas o pedido, fallback para página inteira
+        const orderElement = document.querySelector('.pedido, .order, .receipt, .cupom, [data-order-id]');
+        const html = orderElement ? orderElement.outerHTML : document.documentElement.outerHTML;
+        
         if (window.electronAPI && window.electronAPI.printOrder) {
           window.electronAPI.printOrder(html, 'beforeprint_' + Date.now());
         }
@@ -420,128 +424,7 @@ function createPrintJobWindow(htmlContent) {
   });
 }
 
-async function executePrintJob(job) {
-  console.log('🖨️ [PRINT] Executando job:', job.id);
-  
-  try {
-    const printWindow = await createPrintJobWindow(job.data.html);
-    
-    const printOptions = {
-      silent: true,
-      printBackground: true,
-      deviceName: printerSettings.selectedPrinter || printerSettings.defaultPrinter,
-      copies: 1,
-      marginsType: 0,
-      pageSize: { 
-        width: 0.08, // 80mm em metros
-        height: 0.2  // 200mm em metros
-      },
-      landscape: false,
-      printSelectionOnly: false,
-      collate: false
-    };
-    
-    console.log('🖨️ [PRINT] Enviando para impressora:', printOptions.deviceName);
-    
-    printWindow.webContents.print(printOptions)
-      .then(() => {
-        console.log('✅ [PRINT] Job concluído com sucesso:', job.id);
-        printWindow.close();
-        
-        // Notificar frontend sobre sucesso
-        if (mainWindow) {
-          mainWindow.webContents.send('print-job-complete', {
-            jobId: job.id,
-            success: true,
-            timestamp: new Date().toISOString()
-          });
-        }
-        
-        // Continuar processando fila
-        setTimeout(() => processPrintQueue(), 1000);
-      })
-      .catch(err => {
-        console.error('❌ [PRINT] Erro na impressão:', err);
-        printWindow.close();
-        
-        // Tentar fallback sem impressora específica
-        if (printOptions.deviceName) {
-          console.log('🔄 [PRINT] Tentando fallback sem impressora específica...');
-          const fallbackOptions = { ...printOptions, deviceName: '' };
-          
-          printWindow.webContents.print(fallbackOptions)
-            .then(() => {
-              console.log('✅ [PRINT] Job concluído com fallback:', job.id);
-              printWindow.close();
-              
-              if (mainWindow) {
-                mainWindow.webContents.send('print-job-complete', {
-                  jobId: job.id,
-                  success: true,
-                  fallback: true,
-                  timestamp: new Date().toISOString()
-                });
-              }
-              
-              setTimeout(() => processPrintQueue(), 1000);
-            })
-            .catch(err2 => {
-              console.error('❌ [PRINT] Erro no fallback:', err2);
-              printWindow.close();
-              
-              if (mainWindow) {
-                mainWindow.webContents.send('print-job-complete', {
-                  jobId: job.id,
-                  success: false,
-                  error: err2.message,
-                  timestamp: new Date().toISOString()
-                });
-              }
-              
-              setTimeout(() => processPrintQueue(), 1000);
-            });
-        } else {
-          if (mainWindow) {
-            mainWindow.webContents.send('print-job-complete', {
-              jobId: job.id,
-              success: false,
-              error: err.message,
-              timestamp: new Date().toISOString()
-            });
-          }
-          
-          setTimeout(() => processPrintQueue(), 1000);
-        }
-      });
-      
-  } catch (error) {
-    console.error('❌ [PRINT] Erro ao executar job:', error);
-    
-    if (mainWindow) {
-      mainWindow.webContents.send('print-job-complete', {
-        jobId: job.id,
-        success: false,
-        error: error.message,
-        timestamp: new Date().toISOString()
-      });
-    }
-    
-    setTimeout(() => processPrintQueue(), 1000);
-  }
-}
 
-function processPrintQueue() {
-  if (isPrinting || printQueue.length === 0) {
-    return;
-  }
-  
-  isPrinting = true;
-  const job = printQueue.shift();
-  
-  console.log('🖨️ [QUEUE] Processando job:', job.id, 'Restantes:', printQueue.length);
-  
-  executePrintJob(job);
-}
 
 ipcMain.handle('print-order', async (event, { html, orderId, timestamp }) => {
   console.log('🖨️ [PRINT] print-order recebido:', { 

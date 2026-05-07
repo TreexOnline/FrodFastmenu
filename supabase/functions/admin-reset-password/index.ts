@@ -4,7 +4,18 @@ const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };
+
+function json(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: {
+      ...corsHeaders,
+      "Content-Type": "application/json",
+    },
+  });
+}
 
 function generatePassword(length = 12) {
   const chars =
@@ -18,45 +29,43 @@ function generatePassword(length = 12) {
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+    return new Response("ok", {
+      status: 200,
+      headers: corsHeaders,
+    });
   }
 
   try {
     const authHeader = req.headers.get("Authorization");
-    if (!authHeader) {
-      return new Response(JSON.stringify({ error: "Missing auth" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
 
-    const body = await req.json();
-    const user_id: string = body.user_id;
-    const customPassword: string | undefined = body.password;
-    if (!user_id) {
-      return new Response(JSON.stringify({ error: "user_id required" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    if (!authHeader) {
+      return json({ error: "Missing auth" }, 401);
     }
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
 
+    // 🔐 user client
     const userClient = createClient(supabaseUrl, anonKey, {
-      global: { headers: { Authorization: authHeader } },
+      global: {
+        headers: {
+          Authorization: authHeader,
+        },
+      },
     });
-    const { data: userData, error: userErr } = await userClient.auth.getUser();
+
+    const { data: userData, error: userErr } =
+      await userClient.auth.getUser();
+
     if (userErr || !userData.user) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return json({ error: "Unauthorized" }, 401);
     }
 
+    // 🔐 admin client
     const admin = createClient(supabaseUrl, serviceKey);
 
+    // 🔐 check admin
     const { data: roleRow } = await admin
       .from("user_roles")
       .select("role")
@@ -65,30 +74,45 @@ Deno.serve(async (req) => {
       .maybeSingle();
 
     if (!roleRow) {
-      return new Response(JSON.stringify({ error: "Forbidden" }), {
-        status: 403,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return json({ error: "Forbidden" }, 403);
     }
 
+    // 📦 body
+    const body = await req.json().catch(() => ({}));
+    const user_id: string = body.user_id;
+    const customPassword: string | undefined = body.password;
+
+    if (!user_id) {
+      return json({ error: "user_id required" }, 400);
+    }
+
+    // 🔥 VALIDATIONS
+    if (customPassword && customPassword.length < 6) {
+      return json({ error: "Senha deve ter ao menos 6 caracteres" }, 400);
+    }
+
+    // 🔑 Generate or use custom password
     const newPassword =
       customPassword && customPassword.length >= 6
         ? customPassword
         : generatePassword(12);
 
+    console.log(`Resetando senha do usuário ${user_id}...`);
+
+    // 🔄 Update user password
     const { error: updErr } = await admin.auth.admin.updateUserById(user_id, {
       password: newPassword,
     });
-    if (updErr) throw updErr;
 
-    return new Response(JSON.stringify({ ok: true, new_password: newPassword }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  } catch (e: any) {
-    console.error("admin-reset-password error:", e);
-    return new Response(JSON.stringify({ error: "Erro interno. Tente novamente." }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    if (updErr) {
+      console.error("Erro ao atualizar senha:", updErr);
+      return json({ error: "Erro ao resetar senha" }, 500);
+    }
+
+    console.log(`Senha do usuário ${user_id} atualizada com sucesso`);
+    return json({ ok: true, new_password: newPassword });
+  } catch (err) {
+    console.error("admin-reset-password error:", err);
+    return json({ error: "Erro interno. Tente novamente." }, 500);
   }
 });

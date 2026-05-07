@@ -4,40 +4,58 @@ const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };
+
+function json(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: {
+      ...corsHeaders,
+      "Content-Type": "application/json",
+    },
+  });
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+    return new Response("ok", {
+      status: 200,
+      headers: corsHeaders,
+    });
   }
 
   try {
     const authHeader = req.headers.get("Authorization");
+
     if (!authHeader) {
-      return new Response(JSON.stringify({ error: "Missing auth" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return json({ error: "Missing auth" }, 401);
     }
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
 
-    // Cliente do usuário para validar quem chama
+    // 🔐 user client
     const userClient = createClient(supabaseUrl, anonKey, {
-      global: { headers: { Authorization: authHeader } },
+      global: {
+        headers: {
+          Authorization: authHeader,
+        },
+      },
     });
-    const { data: userData, error: userErr } = await userClient.auth.getUser();
+
+    const { data: userData, error: userErr } =
+      await userClient.auth.getUser();
+
     if (userErr || !userData.user) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return json({ error: "Unauthorized" }, 401);
     }
 
-    // Verifica se é admin
+    // 🔐 admin client
     const admin = createClient(supabaseUrl, serviceKey);
+
+    // 🔐 check admin
     const { data: roleRow } = await admin
       .from("user_roles")
       .select("role")
@@ -46,23 +64,39 @@ Deno.serve(async (req) => {
       .maybeSingle();
 
     if (!roleRow) {
-      return new Response(JSON.stringify({ error: "Forbidden" }), {
-        status: 403,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return json({ error: "Forbidden" }, 403);
     }
 
-    // Lista todos os usuários do auth
+    // 📋 Lista todos os usuários do auth
+    console.log("Listando usuários do auth...");
     const { data: list, error: listErr } = await admin.auth.admin.listUsers({
       page: 1,
       perPage: 1000,
     });
-    if (listErr) throw listErr;
+    
+    if (listErr) {
+      console.error("Erro ao listar usuários:", listErr);
+      return json({ error: "Erro ao listar usuários" }, 500);
+    }
+    
+    console.log(`Total de usuários no auth: ${list.users.length}`);
 
-    // Pega perfis e roles
-    const { data: profiles } = await admin.from("profiles").select("*");
-    const { data: roles } = await admin.from("user_roles").select("user_id, role");
+    // 📋 Pega perfis e roles
+    console.log("Buscando perfis...");
+    const { data: profiles, error: profilesError } = await admin.from("profiles").select("*");
+    if (profilesError) {
+      console.error("Erro ao buscar perfis:", profilesError);
+    }
+    console.log(`Total de perfis: ${profiles?.length || 0}`);
+    
+    console.log("Buscando roles...");
+    const { data: roles, error: rolesError } = await admin.from("user_roles").select("user_id, role");
+    if (rolesError) {
+      console.error("Erro ao buscar roles:", rolesError);
+    }
+    console.log(`Total de roles: ${roles?.length || 0}`);
 
+    // 🔄 Processa dados
     const profilesById = new Map((profiles ?? []).map((p: any) => [p.id, p]));
     const rolesByUser = new Map<string, string[]>();
     (roles ?? []).forEach((r: any) => {
@@ -73,10 +107,16 @@ Deno.serve(async (req) => {
 
     const users = list.users.map((u: any) => {
       const p: any = profilesById.get(u.id);
+      // ✅ PRIORIZAR EMAIL REAL DO PROFILE, SÓ USAR AUTH SE NÃO TIVER
+      const profileEmail = p?.email;
+      const authEmail = u.email;
+      const isFakeEmail = authEmail?.includes('@phone.app') || authEmail?.includes('@phone.treexmenu.app');
+      const displayEmail = profileEmail && !isFakeEmail ? profileEmail : (isFakeEmail ? 'Email não informado' : authEmail);
+      
       return {
         id: u.id,
-        email: u.email,
-        phone: p?.whatsapp_number ?? null,
+        email: displayEmail,
+        phone: p?.whatsapp_number ?? p?.phone ?? null,
         created_at: u.created_at,
         last_sign_in_at: u.last_sign_in_at,
         full_name: p?.full_name ?? null,
@@ -93,14 +133,11 @@ Deno.serve(async (req) => {
       };
     });
 
-    return new Response(JSON.stringify({ users }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  } catch (e: any) {
-    console.error("admin-list-users error:", e);
-    return new Response(JSON.stringify({ error: "Erro interno. Tente novamente." }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    console.log(`Retornando ${users.length} usuários processados`);
+
+    return json({ users });
+  } catch (err) {
+    console.error("admin-list-users error:", err);
+    return json({ error: "Erro interno. Tente novamente." }, 500);
   }
 });
