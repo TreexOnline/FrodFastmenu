@@ -193,7 +193,9 @@ const PublicMenu = () => {
     const trigger = () => {
       if (timer) window.clearTimeout(timer);
       timer = window.setTimeout(() => {
-        setAddonsCache({});
+        // Otimização: não limpa cache de adicionais completamente
+        // Apenas recarrega dados do menu, mantendo cache de adicionais que não mudaram
+        // setAddonsCache({}); // Removido para evitar lentidão
         loadMenuData({ silent: true });
       }, 400);
     };

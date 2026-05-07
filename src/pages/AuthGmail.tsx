@@ -55,23 +55,7 @@ const AuthGmail = () => {
     }
   };
 
-  // ---- LOGIN COM GOOGLE ----
-  const signInWithGoogle = async () => {
-    setLoading(true);
-    try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: `${window.location.origin}/dashboard`,
-        },
-      });
-      if (error) throw error;
-    } catch (err: any) {
-      toast.error("Erro ao fazer login com Google");
-      setLoading(false);
-    }
-  };
-
+  
   // ---- SIGNUP STEP 1: verificar e-mail ----
   const checkEmail = async () => {
     if (!emailValid) return toast.error("Informe um e-mail válido");
@@ -213,30 +197,7 @@ const AuthGmail = () => {
         {/* LOGIN */}
         {mode === "login" && (
           <div className="space-y-6">
-            {/* Botão Google */}
-            <Button
-              onClick={signInWithGoogle}
-              disabled={loading}
-              className="w-full"
-              variant="outline"
-            >
-              {loading ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Mail className="mr-2 h-4 w-4" />
-              )}
-              Entrar com Google
-            </Button>
-
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <span className="w-full border-t" />
-              </div>
-              <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-background px-2 text-muted-foreground">Ou</span>
-              </div>
-            </div>
-
+            
             {/* Formulário E-mail/Senha */}
             <form onSubmit={onLogin} className="space-y-4">
               <div>

@@ -301,9 +301,17 @@ export function AddonsManager({ productId, userId }: Props) {
     savingRef.current = true;
     setSaving(true);
     try {
+      // Otimização: coletar todas as operações para fazer em lote
+      const groupInserts: any[] = [];
+      const groupUpdates: any[] = [];
+      const optionInserts: any[] = [];
+      const optionUpdates: any[] = [];
+      
+      // Preparar operações em lote
       for (const g of groups) {
         // grupos vinculados à biblioteca não são editáveis aqui
         if (g.library_group_id) continue;
+        
         const groupPayload = {
           product_id: g.product_id,
           user_id: g.user_id,
@@ -313,54 +321,102 @@ export function AddonsManager({ productId, userId }: Props) {
           max_selections: g.max_selections,
           position: g.position,
         };
-        let groupId = g.id;
+        
         if (g._new) {
-          const { data, error } = await supabase
-            .from("product_addon_groups")
-            .insert(groupPayload)
-            .select("id")
-            .single();
-          if (error) throw error;
-          groupId = data.id;
-          // Marca como persistido localmente — proteção extra caso saveAll
-          // seja chamado novamente antes do reload terminar.
-          g.id = groupId;
-          g._new = false;
+          groupInserts.push({ ...groupPayload, _tempId: g.id });
         } else {
-          const { error } = await supabase
-            .from("product_addon_groups")
-            .update(groupPayload)
-            .eq("id", g.id);
-          if (error) throw error;
+          groupUpdates.push({ ...groupPayload, id: g.id });
         }
 
         for (const o of g.options) {
           if (!o.name.trim()) continue;
           const optionPayload = {
-            group_id: groupId,
+            group_id: g._new ? '_tempId' : g.id, // será substituído após insert
             user_id: userId,
             name: o.name.trim(),
             price: Number(o.price) || 0,
             default_quantity: Math.max(1, Number(o.default_quantity) || 1),
             position: o.position,
+            _tempGroupId: g.id,
+            _tempOptionId: o.id,
           };
+          
           if (o._new) {
-            const { data, error } = await supabase
-              .from("product_addons")
-              .insert(optionPayload)
-              .select("id")
-              .single();
-            if (error) throw error;
-            o.id = data.id;
-            o._new = false;
+            optionInserts.push(optionPayload);
           } else {
-            const { error } = await supabase.from("product_addons").update(optionPayload).eq("id", o.id);
-            if (error) throw error;
+            optionUpdates.push({ ...optionPayload, id: o.id, group_id: g.id });
           }
         }
       }
+
+      // Executar operações em lote
+      let groupIdMap: Record<string, string> = {};
+      
+      // Inserir grupos novos em lote
+      if (groupInserts.length > 0) {
+        const { data: insertedGroups, error } = await supabase
+          .from("product_addon_groups")
+          .insert(groupInserts.map(g => ({ product_id: g.product_id, user_id: g.user_id, name: g.name, selection_type: g.selection_type, is_required: g.is_required, max_selections: g.max_selections, position: g.position })))
+          .select("id");
+        
+        if (error) throw error;
+        
+        // Mapear IDs temporários para IDs reais
+        insertedGroups?.forEach((group: any, index: number) => {
+          groupIdMap[groupInserts[index]._tempId] = group.id;
+        });
+      }
+
+      // Atualizar grupos existentes em lote
+      if (groupUpdates.length > 0) {
+        const { error } = await supabase
+          .from("product_addon_groups")
+          .upsert(groupUpdates);
+        if (error) throw error;
+      }
+
+      // Preparar opções com IDs de grupo corretos
+      const finalOptionInserts = optionInserts.map(opt => ({
+        group_id: groupIdMap[opt._tempGroupId] || opt.group_id,
+        user_id: opt.user_id,
+        name: opt.name,
+        price: opt.price,
+        default_quantity: opt.default_quantity,
+        position: opt.position,
+      }));
+
+      // Inserir opções novas em lote
+      if (finalOptionInserts.length > 0) {
+        const { error } = await supabase
+          .from("product_addons")
+          .insert(finalOptionInserts);
+        if (error) throw error;
+      }
+
+      // Atualizar opções existentes em lote
+      if (optionUpdates.length > 0) {
+        const { error } = await supabase
+          .from("product_addons")
+          .upsert(optionUpdates);
+        if (error) throw error;
+      }
+
+      // Atualizar estado local com IDs reais
+      groups.forEach(g => {
+        if (g._new && groupIdMap[g.id]) {
+          g.id = groupIdMap[g.id];
+          g._new = false;
+        }
+        g.options.forEach(o => {
+          if (o._new) {
+            o._new = false;
+          }
+        });
+      });
+
       toast.success("Adicionais salvos");
-      await load();
+      // Otimização: não recarrega o cardápio inteiro, apenas atualiza o estado local
+      // await load(); // Removido para evitar lentidão
     } catch (e: any) {
       toast.error(e.message || "Erro ao salvar");
     } finally {
