@@ -1304,8 +1304,13 @@ function ProductSheetBody({
     (g) => g.is_required && (selected[g.id]?.size ?? 0) === 0,
   );
 
+  // Regra: produtos com "a partir de" devem escolher pelo menos 1 adicional
+  const hasPriceFrom = product.price_from_enabled && product.price_from_value;
+  const hasSelectedAnyAddon = selectedAddons.length > 0;
+  const missingAddonForPriceFrom = hasPriceFrom && !hasSelectedAnyAddon;
+
   const confirm = () => {
-    if (missingRequired) return;
+    if (missingRequired || missingAddonForPriceFrom) return;
     onConfirm(selectedAddons, notes, qty);
   };
 
@@ -1470,7 +1475,7 @@ function ProductSheetBody({
         </div>
         <button
           onClick={confirm}
-          disabled={!!missingRequired}
+          disabled={!!missingRequired || missingAddonForPriceFrom}
           className="flex flex-1 items-center justify-between gap-2 rounded-full px-4 py-3 text-sm font-bold transition active:scale-[0.98] disabled:opacity-50"
           style={{ background: theme.accent, color: theme.accentText }}
         >
