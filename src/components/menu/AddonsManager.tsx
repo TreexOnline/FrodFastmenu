@@ -415,7 +415,7 @@ export function AddonsManager({ productId, userId }: Props) {
       });
 
       toast.success("Adicionais salvos");
-      await load();
+      // await load(); // Removido para evitar lentidão - mantém estado local
     } catch (e: any) {
       toast.error(e.message || "Erro ao salvar");
     } finally {

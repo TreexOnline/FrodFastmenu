@@ -1,10 +1,10 @@
 import { Link } from "react-router-dom";
 import { cn } from "@/lib/utils";
-import logoImg from "@/assets/logo-treexmenu.png";
+import logoImg from "@/assets/logo-frodfast.png";
 
 interface Props {
   className?: string;
-  /** Tailwind height class for the image (e.g., "h-12") */
+  /** Tailwind height class for image (e.g., "h-12") */
   imgClassName?: string;
 }
 
@@ -13,11 +13,11 @@ export const Logo = ({ className, imgClassName = "h-20" }: Props) => {
     <Link
       to="/"
       className={cn("inline-flex items-center", className)}
-      aria-label="TreexMenu"
+      aria-label="FrodFast"
     >
       <img
         src={logoImg}
-        alt="TreexMenu"
+        alt="FrodFast"
         className={cn("w-auto select-none", imgClassName)}
         loading="eager"
         draggable={false}
