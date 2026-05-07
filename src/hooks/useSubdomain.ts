@@ -27,9 +27,18 @@ export const useSubdomain = () => {
     // Domínios principais conhecidos (SEM subdomínio)
     const mainDomains = ['treexonline.online', 'treexmenu.app'];
     
+    // Subdomínios inválidos que não devem ser processados
+    const invalidSubdomains = ['www', 'mail', 'ftp', 'cpanel', 'webmail'];
+    
     // Se o hostname exato é um domínio principal → NÃO é subdomínio
     if (mainDomains.includes(hostname)) {
-      return null;
+      return { subdomain: null, isSubdomain: false, hostname };
+    }
+    
+    // Se começa com subdomínio inválido → NÃO é subdomínio
+    const firstPart = parts[0];
+    if (invalidSubdomains.includes(firstPart)) {
+      return { subdomain: null, isSubdomain: false, hostname };
     }
     
     // Se começa com www. + domínio principal → NÃO é subdomínio
@@ -68,7 +77,7 @@ export const useSubdomain = () => {
     if (!subdomain) return null;
     
     // Converter para minúsculas e substituir hifens por espaços para busca
-    const searchSlug = subdomain.toLowerCase().replace(/-/g, ' ');
+    const searchSlug = (subdomain as string).toLowerCase().replace(/-/g, ' ');
     
     // Manter o original para exibição
     const displaySlug = subdomain;
@@ -76,7 +85,7 @@ export const useSubdomain = () => {
     return {
       original: displaySlug,
       search: searchSlug,
-      url: subdomain.toLowerCase() // para URLs consistentes
+      url: (subdomain as string).toLowerCase() // para URLs consistentes
     };
   }, [subdomain]);
 
