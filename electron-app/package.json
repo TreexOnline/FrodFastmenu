@@ -42,7 +42,8 @@
       "main.js",
       "preload.js",
       "node_modules/**/*",
-      "package.json"
+      "package.json",
+      "assets/**/*"
     ],
     "win": {
       "target": [
@@ -61,7 +62,8 @@
       ],
       "artifactName": "FrodFast-${version}.${ext}",
       "verifyUpdateCodeSignature": false,
-      "forceCodeSigning": false
+      "forceCodeSigning": false,
+      "icon": "assets/icon.png"
     },
     "nsis": {
       "oneClick": false,

@@ -114,7 +114,7 @@ img{max-width:100%;height:auto;}
 <div>${new Date().toLocaleDateString('pt-BR')} ${new Date().toLocaleTimeString('pt-BR')}</div>
 </div>
 <div class="content">${content}</div>
-<div class="footer">Gerado via TreexMenu Electron App</div>
+<div class="footer">Gerado via FrodFast Electron App</div>
 </body>
 </html>`;
 };
@@ -231,6 +231,7 @@ function createWindow() {
     height: 800,
     show: false,
     autoHideMenuBar: true,
+    icon: path.join(__dirname, 'assets/icon.png'),
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,

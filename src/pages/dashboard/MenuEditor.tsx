@@ -195,8 +195,6 @@ const MenuEditor = () => {
         savingVisual || savingInfo || savingProduct || savingCategory;
       if (editingSomething) return;
       
-      // Otimização: evitar recarregamento se acabou de salvar adicionais
-      // para não causar lentidão desnecessária
       load();
     },
   });

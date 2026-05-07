@@ -67,12 +67,12 @@ const PublicMenu = () => {
     if (menu?.name) {
       document.title = menu.name;
     } else {
-      document.title = "TreexMenu — Cardápio digital profissional para restaurantes";
+      document.title = "FrodFast — Cardápio digital profissional para restaurantes";
     }
     
     // Cleanup: restaurar título original ao sair do cardápio
     return () => {
-      document.title = "TreexMenu — Cardápio digital profissional para restaurantes";
+      document.title = "FrodFast — Cardápio digital profissional para restaurantes";
     };
   }, [menu?.name]);
   const [loading, setLoading] = useState(true);
@@ -193,9 +193,7 @@ const PublicMenu = () => {
     const trigger = () => {
       if (timer) window.clearTimeout(timer);
       timer = window.setTimeout(() => {
-        // Otimização: não limpa cache de adicionais completamente
-        // Apenas recarrega dados do menu, mantendo cache de adicionais que não mudaram
-        // setAddonsCache({}); // Removido para evitar lentidão
+        setAddonsCache({});
         loadMenuData({ silent: true });
       }, 400);
     };
