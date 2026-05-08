@@ -157,7 +157,7 @@ const Auth = () => {
     <div className="grid min-h-screen lg:grid-cols-2">
       {/* Painel lateral */}
       <div className="hidden gradient-brand p-12 lg:flex lg:flex-col lg:justify-between">
-        <Logo imgClassName="h-24" />
+        <Logo imgClassName="h-20 hidden lg:block" />
         <div className="text-primary-foreground">
           <h2 className="text-balance text-4xl font-bold leading-tight">
             Cadastro 100% pelo WhatsApp.
@@ -176,7 +176,7 @@ const Auth = () => {
       <div className="flex items-center justify-center bg-background p-6">
         <div className="w-full max-w-md">
           <div className="mb-8 lg:hidden">
-            <Logo />
+            <Logo imgClassName="h-16 lg:hidden" />
           </div>
 
           {/* Cabeçalho dinâmico */}

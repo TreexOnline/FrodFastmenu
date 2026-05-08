@@ -128,20 +128,20 @@ const AuthGmail = () => {
 
         if (storeError) throw storeError;
 
-        // 4. Criar role de usuário
-        const { error: roleError } = await supabase
-          .from('user_roles')
-          .insert({
+        // 4. Criar role de usuário via Edge Function
+        const { error: roleError } = await supabase.functions.invoke("assign-user-role", {
+          body: {
             user_id: authData.user.id,
             role: 'user',
             permissions: {
               manage_stores: true,
               manage_categories: true,
-              manage_menu_items: true,
+              manage_products: true,
               manage_orders: true,
-              view_reports: true,
-            },
-          } as any);
+              view_reports: true
+            }
+          }
+        });
 
         if (roleError) throw roleError;
 

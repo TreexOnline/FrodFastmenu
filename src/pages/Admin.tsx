@@ -117,13 +117,11 @@ const Admin = () => {
       return;
     }
     (async () => {
-      const { data } = await supabase
-        .from("user_roles")
-        .select("role")
-        .eq("user_id", user.id)
-        .eq("role", "admin")
-        .maybeSingle();
-      if (data) {
+      const { data } = await supabase.functions.invoke("check-user-role", {
+        body: { user_id: user.id, role: "admin" }
+      });
+      
+      if (data?.hasRole) {
         setIsAdmin(true);
       } else {
         toast.error("Acesso restrito ao administrador");

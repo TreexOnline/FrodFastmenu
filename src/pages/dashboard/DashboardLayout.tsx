@@ -39,16 +39,18 @@ const DashboardLayout = () => {
         }
       });
     
-    // Verificar se é admin
-    supabase.from("user_roles").select("role").eq("user_id", user.id).eq("role", "admin").maybeSingle()
-      .then(({ data, error }) => {
-        if (error) {
-          console.error("Erro ao verificar permissões de admin:", error);
-          setIsAdmin(false);
-        } else {
-          setIsAdmin(!!data);
-        }
-      });
+    // Verificar se é admin via Edge Function
+    supabase.functions.invoke("check-user-role", {
+      body: { user_id: user.id, role: "admin" }
+    })
+    .then(({ data, error }) => {
+      if (error) {
+        console.error("Erro ao verificar permissões de admin:", error);
+        setIsAdmin(false);
+      } else {
+        setIsAdmin(data?.hasRole || false);
+      }
+    });
   }, [user]);
 
   const items = isAdmin ? [...baseItems, adminPageItem] : baseItems;
@@ -62,7 +64,7 @@ const DashboardLayout = () => {
       <aside className="hidden lg:flex fixed inset-y-0 left-0 z-30 w-72 flex-col border-r border-sidebar-border bg-sidebar">
         {/* Brand */}
         <div className="flex h-32 items-center justify-center border-b border-sidebar-border px-4">
-          <Logo imgClassName="h-40" />
+          <Logo imgClassName="h-24" />
         </div>
 
         {/* Restaurant card */}
@@ -166,7 +168,7 @@ const DashboardLayout = () => {
 
       {/* Mobile top bar */}
       <div className="lg:hidden fixed top-0 left-0 right-0 z-40 flex h-16 items-center justify-between border-b border-border bg-background px-4">
-        <Logo imgClassName="h-16" />
+        <Logo imgClassName="h-14" />
         <div className="flex items-center gap-1">
           <Button variant="ghost" size="sm" onClick={toggleTheme} aria-label="Alternar tema">
             {theme === "dark" ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}

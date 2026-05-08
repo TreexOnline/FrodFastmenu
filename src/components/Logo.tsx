@@ -18,10 +18,11 @@ export const Logo = ({ className, imgClassName = "h-20" }: Props) => {
       <img
         src={logoImg}
         alt="FrodFast"
-        className={cn("w-auto select-none", imgClassName)}
-        loading="eager"
+        className={cn("w-auto select-none transition-opacity", imgClassName)}
+        loading="lazy"
+        decoding="async"
         draggable={false}
-      />
+              />
     </Link>
   );
 };

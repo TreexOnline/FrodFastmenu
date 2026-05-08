@@ -570,7 +570,10 @@ export function ManualOrderDialog({ open, onOpenChange, onCreated, appendToOrder
                             />
                             <Input
                               value={addressNumber}
-                              onChange={(e) => setAddressNumber(e.target.value)}
+                              onChange={(e) => {
+                                const value = e.target.value.replace(/\D/g, '');
+                                setAddressNumber(value);
+                              }}
                               placeholder="Número"
                               className="h-9"
                             />
@@ -589,7 +592,13 @@ export function ManualOrderDialog({ open, onOpenChange, onCreated, appendToOrder
                           />
                           <Input
                             value={addressZip}
-                            onChange={(e) => setAddressZip(e.target.value)}
+                            onChange={(e) => {
+                              let value = e.target.value.replace(/\D/g, '').slice(0, 8);
+                              if (value.length > 5) {
+                                value = value.replace(/(\d{5})(\d{3})/, '$1-$2');
+                              }
+                              setAddressZip(value);
+                            }}
                             placeholder="CEP"
                             className="h-9"
                           />
@@ -603,7 +612,10 @@ export function ManualOrderDialog({ open, onOpenChange, onCreated, appendToOrder
                       </Label>
                       <Input
                         value={customerName}
-                        onChange={(e) => setCustomerName(e.target.value)}
+                        onChange={(e) => {
+                          const value = e.target.value.replace(/[^a-zA-ZÀ-ú\s]/g, '');
+                          setCustomerName(value);
+                        }}
                         placeholder="Nome do cliente"
                         className="mt-1 h-9"
                         required

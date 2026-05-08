@@ -558,7 +558,10 @@ export function EditOpenTabDialog({ open, onOpenChange, order, items, onSaved }:
                 </Label>
                 <Input
                   value={customerName}
-                  onChange={(e) => setCustomerName(e.target.value)}
+                  onChange={(e) => {
+                    const value = e.target.value.replace(/[^a-zA-ZÀ-ú\s]/g, '');
+                    setCustomerName(value);
+                  }}
                   placeholder="Nome do cliente"
                   className="mt-1 h-9"
                   required

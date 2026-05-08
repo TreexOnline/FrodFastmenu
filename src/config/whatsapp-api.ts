@@ -1,5 +1,5 @@
-// Configuração da API do WhatsApp Engine (Railway)
-export const WHATSAPP_API_BASE_URL = 'https://whatsmotor-production.up.railway.app/api/whatsapp';
+// Configuração da API do WhatsApp Engine (Evolution API - Railway)
+export const WHATSAPP_API_BASE_URL = 'https://bot-zap-production-9534.up.railway.app/api/sessions';
 
 // Helper para fazer requisições à API do WhatsApp Engine
 export const whatsappApi = {
@@ -16,7 +16,14 @@ export const whatsappApi = {
       throw new Error(`Erro ao conectar: ${response.status} ${response.statusText}`);
     }
     
-    return response.json();
+    const data = await response.json();
+    
+    // Tratar novo formato de resposta Evolution API
+    if (data.success) {
+      return data;
+    } else {
+      throw new Error(data.error || 'Connection failed');
+    }
   },
 
   // GET /qr/{userId}
@@ -27,7 +34,14 @@ export const whatsappApi = {
       throw new Error(`Erro ao buscar QR: ${response.status} ${response.statusText}`);
     }
     
-    return response.json();
+    const data = await response.json();
+    
+    // Tratar novo formato de resposta Evolution API
+    if (data.success) {
+      return data;
+    } else {
+      throw new Error(data.error || 'QR generation failed');
+    }
   },
 
   // GET /status/{userId}
@@ -38,7 +52,14 @@ export const whatsappApi = {
       throw new Error(`Erro ao buscar status: ${response.status} ${response.statusText}`);
     }
     
-    return response.json();
+    const data = await response.json();
+    
+    // Tratar novo formato de resposta Evolution API
+    if (data.success) {
+      return data;
+    } else {
+      throw new Error(data.error || 'Status check failed');
+    }
   },
 
   // POST /disconnect/{userId}
@@ -54,7 +75,14 @@ export const whatsappApi = {
       throw new Error(`Erro ao desconectar: ${response.status} ${response.statusText}`);
     }
     
-    return response.json();
+    const data = await response.json();
+    
+    // Tratar novo formato de resposta Evolution API
+    if (data.success) {
+      return data;
+    } else {
+      throw new Error(data.error || 'Disconnect failed');
+    }
   },
 
   // POST /save-config/{userId}
@@ -75,6 +103,13 @@ export const whatsappApi = {
       throw new Error(`Erro ao salvar configuração: ${response.status} ${response.statusText}`);
     }
     
-    return response.json();
+    const data = await response.json();
+    
+    // Tratar novo formato de resposta Evolution API
+    if (data.success) {
+      return data;
+    } else {
+      throw new Error(data.error || 'Config save failed');
+    }
   },
 };

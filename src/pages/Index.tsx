@@ -18,8 +18,8 @@ import {
   Layers,
   Smartphone,
   Palette,
-  ShieldCheck,
   Check,
+  ShieldCheck,
   Sparkles,
   Zap,
   Calendar,
@@ -283,12 +283,11 @@ const Index = () => {
 
       {/* TRUST */}
       <section className="border-y border-border/60 bg-card/50 py-10">
-        <div className="container-app grid grid-cols-2 gap-8 text-center md:grid-cols-4">
+        <div className="container-app grid grid-cols-1 gap-12 text-center md:grid-cols-3 md:gap-8 lg:gap-16">
           {[
-            { value: 1200, prefix: "+", suffix: "", l: "Restaurantes ativos" },
-            { value: 98, prefix: "", suffix: "%", l: "Satisfação dos clientes" },
-            { value: 5, prefix: "", suffix: " min", l: "Para criar seu cardápio" },
-            { value: 24, prefix: "", suffix: "/7", l: "IA atendendo no WhatsApp" },
+            { value: 35, prefix: "+", suffix: "", l: "Restaurantes ativos" },
+            { value: 100, prefix: "", suffix: "%", l: "Satisfação dos clientes" },
+            { value: 24, prefix: "", suffix: "/7", l: "Integração com WhatsApp" },
           ].map((s) => (
             <div key={s.l} className="group">
               <div className="bg-gradient-to-br from-primary via-primary to-accent bg-clip-text text-3xl font-extrabold tracking-tight text-transparent tabular-nums sm:text-4xl">
