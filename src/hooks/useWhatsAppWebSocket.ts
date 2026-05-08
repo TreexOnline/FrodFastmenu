@@ -150,6 +150,47 @@ export function useWhatsAppWebSocket() {
       console.log('🔗 Endpoint URL:', WHATSAPP_API_CONFIG.endpoints.connect(user?.id));
       console.log('🌐 Base URL:', WHATSAPP_API_CONFIG.baseURL);
       
+      // 🔍 VERIFICAR ESTADO ATUAL PRIMEIRO
+      console.log('🔍 Checking current WhatsApp status...');
+      const currentStatus = await apiRequest(WHATSAPP_API_CONFIG.endpoints.status(user.id));
+      
+      if (currentStatus.success && currentStatus.data) {
+        const { connected, status, qr } = currentStatus.data;
+        
+        // 🟢 JÁ ESTÁ CONECTADO
+        if (connected && status === 'connected') {
+          console.log('🟢 WhatsApp already connected - no action needed');
+          setConnected(true);
+          setStatus('connected');
+          setPhone(currentStatus.data.phone);
+          setProfileName(currentStatus.data.profileName);
+          setQrCode(null);
+          return;
+        }
+        
+        // 🟡 JÁ TEM QR VÁLIDO
+        if ((status === 'qr' || status === 'connecting') && qr) {
+          console.log('🟡 Reusing existing QR code');
+          setConnected(false);
+          setStatus(status);
+          setQrCode(qr);
+          return;
+        }
+        
+        // 🟡 ESTÁ CONECTANDO MAS SEM QR
+        if (status === 'connecting' && !qr) {
+          console.log('🟡 Connection in progress, requesting new QR...');
+          const qrResponse = await apiRequest(WHATSAPP_API_CONFIG.endpoints.qr(user.id));
+          if (qrResponse.success && qrResponse.data?.qr) {
+            setQrCode(qrResponse.data.qr);
+            setStatus('qr');
+            return;
+          }
+        }
+      }
+      
+      // 🔴 NÃO EXISTE OU ESTÁ DESCONECTADO - CONECTAR NORMALMENTE
+      console.log('🔴 No valid session found - starting new connection');
       const response = await apiRequest(WHATSAPP_API_CONFIG.endpoints.connect(user.id), {
         method: 'POST',
         body: JSON.stringify({})
