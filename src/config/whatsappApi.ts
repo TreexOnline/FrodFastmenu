@@ -6,7 +6,7 @@ const isDevelopment = import.meta.env.DEV || import.meta.env.MODE === 'developme
 
 // URL base dinâmica baseada no ambiente
 const baseURL = import.meta.env.VITE_WHATSAPP_API_URL || 
-               (isDevelopment ? "http://localhost:3001" : "https://whatsmotor-production.up.railway.app");
+               (isDevelopment ? "http://localhost:3001" : "https://bot-zap-production-9534.up.railway.app");
 
 export const WHATSAPP_API_CONFIG = {
   // URL base do WhatsApp Engine
@@ -14,15 +14,15 @@ export const WHATSAPP_API_CONFIG = {
   
   // Endpoints da API
   endpoints: {
-    connect: (userId: string) => `${baseURL}/api/whatsapp/connect/${userId}`,
-    status: (userId: string) => `${baseURL}/api/whatsapp/status/${userId}`,
-    qr: (userId: string) => `${baseURL}/api/whatsapp/qr/${userId}`,
-    disconnect: (userId: string) => `${baseURL}/api/whatsapp/disconnect/${userId}`,
-    reconnect: (userId: string) => `${baseURL}/api/whatsapp/reconnect/${userId}`,
-    sessions: `${baseURL}/api/whatsapp/sessions`,
-    health: `${baseURL}/api/whatsapp/health`,
-    reconnectAll: `${baseURL}/api/whatsapp/reconnect-all`,
-    cleanup: `${baseURL}/api/whatsapp/cleanup`
+    connect: (userId: string) => `${baseURL}/api/sessions/connect/${userId}`,
+    status: (userId: string) => `${baseURL}/api/sessions/status/${userId}`,
+    qr: (userId: string) => `${baseURL}/api/sessions/qr/${userId}`,
+    disconnect: (userId: string) => `${baseURL}/api/sessions/disconnect/${userId}`,
+    reconnect: (userId: string) => `${baseURL}/api/sessions/reconnect/${userId}`,
+    sessions: `${baseURL}/api/sessions`,
+    health: `${baseURL}/api/health`,
+    reconnectAll: `${baseURL}/api/sessions/reconnect-all`,
+    cleanup: `${baseURL}/api/sessions/cleanup`
   },
   
   // Configurações de polling

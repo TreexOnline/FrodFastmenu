@@ -102,6 +102,10 @@ export function useWhatsAppWebSocket() {
     
     try {
       console.log('🚀 Starting WhatsApp connection for user:', user.id);
+      console.log('👤 User object:', user);
+      console.log('🆔 User ID:', user?.id);
+      console.log('🔗 Endpoint URL:', WHATSAPP_API_CONFIG.endpoints.connect(user?.id));
+      console.log('🌐 Base URL:', WHATSAPP_API_CONFIG.baseURL);
       
       const response = await apiRequest(WHATSAPP_API_CONFIG.endpoints.connect(user.id), {
         method: 'POST',
