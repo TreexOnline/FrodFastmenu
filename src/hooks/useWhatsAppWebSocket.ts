@@ -23,6 +23,14 @@ export function useWhatsAppWebSocket() {
   const statusPollingRef = useRef<NodeJS.Timeout | null>(null);
   const qrPollingRef = useRef<NodeJS.Timeout | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  
+  // Debouncing refs para evitar race conditions
+  const lastQRCallRef = useRef<number>(0);
+  const qrDebounceRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Timestamps para controle de expiração
+  const qrTimestampRef = useRef<number>(0);
+  const QR_EXPIRY_TIME = 60000; // 60 segundos para QR expirar
 
   // Função para fazer requisição à API com timeout
   const apiRequest = async (url: string, options?: RequestInit) => {
@@ -83,15 +91,50 @@ export function useWhatsAppWebSocket() {
   const refreshQR = async () => {
     if (!user) return;
     
-    try {
-      const response = await apiRequest(WHATSAPP_API_CONFIG.endpoints.qr(user.id));
-      
-      if (response.success && response.data) {
-        setQrCode(response.data.qr);
-      }
-    } catch (error) {
-      console.error('❌ Error fetching QR code:', error);
+    // Debouncing - evitar múltiplas chamadas simultâneas
+    const now = Date.now();
+    if (now - lastQRCallRef.current < 1000) { // 1 segundo de debounce
+      console.log('🔄 QR request debounced');
+      return;
     }
+    lastQRCallRef.current = now;
+    
+    // Limpar debounce anterior
+    if (qrDebounceRef.current) {
+      clearTimeout(qrDebounceRef.current);
+    }
+    
+    // Debounce de 500ms para evitar race conditions
+    qrDebounceRef.current = setTimeout(async () => {
+      try {
+        console.log('🔄 Fetching QR code for user:', user.id);
+        const response = await apiRequest(WHATSAPP_API_CONFIG.endpoints.qr(user.id));
+        
+        if (response.success && response.data) {
+          const now = Date.now();
+          
+          // Verificar se QR expirou (mais de 60 segundos)
+          if (qrTimestampRef.current && (now - qrTimestampRef.current > QR_EXPIRY_TIME)) {
+            console.log('⏰ QR Code expired, forcing refresh');
+            qrTimestampRef.current = now;
+            setQrCode(response.data.qr);
+            console.log('✅ QR Code refreshed (expired)');
+            return;
+          }
+          
+          // Verificar se QR é diferente do atual (evitar atualizações desnecessárias)
+          if (response.data.qr !== qrCode) {
+            setQrCode(response.data.qr);
+            qrTimestampRef.current = now; // Atualizar timestamp
+            console.log('✅ QR Code updated successfully');
+          } else {
+            console.log('🔄 QR Code unchanged, skipping update');
+          }
+        }
+      } catch (error) {
+        console.error('❌ Error fetching QR code:', error);
+      }
+    }, 500);
   };
 
   // Iniciar conexão WhatsApp
@@ -181,6 +224,12 @@ export function useWhatsAppWebSocket() {
       clearInterval(qrPollingRef.current);
     }
     
+    // Parar QR polling quando já está conectado
+    if (status === 'connected') {
+      console.log('🛑 QR polling stopped - WhatsApp already connected');
+      return;
+    }
+    
     // Polling de QR apenas quando status é 'qr' ou 'connecting'
     if (status === 'qr' || status === 'connecting') {
       qrPollingRef.current = setInterval(() => {
@@ -254,3 +303,11 @@ export function useWhatsAppWebSocket() {
     refreshStatus
   };
 }
+
+// Configurações de polling
+const polling = {
+  statusInterval: 30000,  // 30 segundos
+  qrInterval: 10000,       // 10 segundos
+  maxRetries: 3,
+  timeoutMs: 30000       // 30 segundos timeout
+};
