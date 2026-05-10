@@ -91,68 +91,27 @@ const Auth = () => {
 
     setLoading(true);
     try {
-      // 1. Criar usuário no Supabase Auth
+      // 1. Apenas criar usuário no Supabase Auth
+      // O resto (profile, menu, roles) será criado automaticamente pelo trigger
+      // quando o usuário confirmar o e-mail
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email,
         password,
         options: {
           data: {
             full_name: fullName,
+            restaurant_name: restaurantName,
           },
         },
       });
 
       if (authError) throw authError;
 
-      // 2. Criar perfil na tabela profiles
-      if (authData.user) {
-        const { error: profileError } = await supabase
-          .from('profiles')
-          .insert({
-            id: authData.user.id,
-            full_name: fullName,
-            restaurant_name: restaurantName,
-            whatsapp_addon_active: false,
-          } as any);
-
-        if (profileError) throw profileError;
-
-        // 3. Criar menu inicial para o restaurante
-        const { error: menuError } = await supabase
-          .from('menus')
-          .insert({
-            name: restaurantName,
-            slug: restaurantName.toLowerCase().replace(/\s+/g, '-'),
-            user_id: authData.user.id,
-          } as any);
-
-        if (menuError) throw menuError;
-
-        // 4. Criar role de usuário via Edge Function
-        const { error: roleError } = await supabase.functions.invoke("assign-user-role", {
-          body: {
-            user_id: authData.user.id,
-            role: 'user',
-            permissions: {
-              manage_stores: true,
-              manage_categories: true,
-              manage_products: true,
-              manage_orders: true,
-              view_reports: true
-            }
-          }
-        });
-
-        if (roleError) throw roleError;
-
-        toast.success("Conta criada com sucesso! Verifique seu e-mail para confirmar.");
-        
-        // Fazer login automático
-        await supabase.auth.signInWithPassword({
-          email,
-          password,
-        });
-      }
+      toast.success("Conta criada! Verifique seu e-mail para confirmar o cadastro.");
+      
+      // Redirecionar para login após cadastro bem-sucedido
+      setMode("login");
+      
     } catch (err: any) {
       toast.error(err.message || "Erro ao criar conta");
     } finally {
