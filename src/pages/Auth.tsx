@@ -58,28 +58,12 @@ const Auth = () => {
   
   // ---- SIGNUP STEP 1: verificar e-mail ----
   const checkEmail = async () => {
-    if (!emailValid) return toast.error("Informe um e-mail válido");
-    setLoading(true);
-    try {
-      // Verificar se o e-mail já existe (verificando no auth)
-      const { data: existingUser } = await supabase.auth.signInWithPassword({
-        email,
-        password: 'temp-check'
-      }).catch(() => ({ data: null }));
-
-      if (existingUser?.user) {
-        toast.error("Este e-mail já está cadastrado. Faça login.");
-        setMode("login");
-        return;
-      }
-
-      // Se não existe, avança para detalhes
-      setStep("details");
-    } catch (err: any) {
-      toast.error("Erro ao verificar e-mail");
-    } finally {
-      setLoading(false);
+    if (!emailValid) {
+      return toast.error("Informe um e-mail válido");
     }
+    // Avança diretamente para detalhes
+    // Supabase vai validar email duplicado no signUp()
+    setStep("details");
   };
 
   // ---- SIGNUP STEP 2: criar conta ----
