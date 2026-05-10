@@ -26,7 +26,7 @@ import AddonLibrary from "./pages/dashboard/AddonLibrary";
 import GlobalOrderNotifier from "./components/GlobalOrderNotifier";
 
 // Only truly separate routes stay lazy
-const Auth = lazy(() => import("./pages/AuthGmail"));
+const Auth = lazy(() => import("./pages/Auth"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 const PublicMenu = lazy(() => import("./pages/PublicMenu"));
 const Admin = lazy(() => import("./pages/Admin"));

@@ -3,30 +3,14 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Logo } from "@/components/Logo";
 import { toast } from "sonner";
-import { ArrowLeft, MessageCircle, Loader2 } from "lucide-react";
+import { ArrowLeft, Mail, Loader2, User, Store } from "lucide-react";
 
 type Mode = "login" | "signup";
-type Step = "phone" | "code" | "details";
-
-const onlyDigits = (s: string) => s.replace(/\D/g, "");
-
-const formatPhoneBR = (raw: string) => {
-  const d = onlyDigits(raw).slice(0, 11);
-  if (d.length <= 2) return d.length ? `(${d}` : "";
-  if (d.length <= 7) return `(${d.slice(0, 2)}) ${d.slice(2)}`;
-  return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
-};
-
-const normalizeForApi = (raw: string) => {
-  const d = onlyDigits(raw);
-  if (d.length === 10 || d.length === 11) return `55${d}`;
-  return d;
-};
+type Step = "email" | "details";
 
 const Auth = () => {
   const [params] = useSearchParams();
@@ -34,12 +18,10 @@ const Auth = () => {
   const { user } = useAuth();
 
   const [mode, setMode] = useState<Mode>(params.get("mode") === "signup" ? "signup" : "login");
-  const [step, setStep] = useState<Step>("phone");
+  const [step, setStep] = useState<Step>("email");
   const [loading, setLoading] = useState(false);
-  const [resendIn, setResendIn] = useState(0);
 
-  const [phone, setPhone] = useState("");
-  const [code, setCode] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
   const [restaurantName, setRestaurantName] = useState("");
@@ -48,95 +30,129 @@ const Auth = () => {
     if (user) navigate("/dashboard", { replace: true });
   }, [user, navigate]);
 
-  useEffect(() => {
-    if (resendIn <= 0) return;
-    const t = setInterval(() => setResendIn((s) => Math.max(0, s - 1)), 1000);
-    return () => clearInterval(t);
-  }, [resendIn]);
+  const emailValid = useMemo(() => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  }, [email]);
 
-  const phoneValid = useMemo(() => onlyDigits(phone).length >= 10, [phone]);
-
-  // ---- LOGIN DESABILITADO ----
-  // Login por telefone foi removido para usar apenas email real
-  // Use AuthGmail.tsx para login com email real
+  // ---- LOGIN COM GMAIL ----
   const onLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    toast.error("Login por telefone desabilitado. Use o login por email em AuthGmail.tsx");
-    setLoading(false);
-  };
-
-  // ---- SIGNUP STEP 1: enviar código ----
-  const sendCode = async () => {
-    if (!phoneValid) return toast.error("Informe um telefone válido");
+    if (!emailValid) return toast.error("Informe um e-mail válido");
+    if (password.length < 6) return toast.error("Senha deve ter ao menos 6 caracteres");
     setLoading(true);
     try {
-      const { data, error } = await supabase.functions.invoke("send-otp", {
-        body: { phone: normalizeForApi(phone) },
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
       });
-      if (error || data?.error) {
-        toast.error(data?.error || error?.message || "Falha ao enviar código");
-        return;
-      }
-      toast.success("Código enviado no seu WhatsApp!");
-      setStep("code");
-      setResendIn(60);
+      if (error) throw error;
+      toast.success("Login realizado com sucesso!");
     } catch (err: any) {
-      toast.error(err.message || "Erro ao enviar código");
+      toast.error("E-mail ou senha incorretos");
     } finally {
       setLoading(false);
     }
   };
 
-  // ---- SIGNUP STEP 2: validar código (avança para passo 3) ----
-  const onCodeContinue = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (code.length !== 6) return toast.error("Digite os 6 dígitos do código");
-    setStep("details");
+  
+  // ---- SIGNUP STEP 1: verificar e-mail ----
+  const checkEmail = async () => {
+    if (!emailValid) return toast.error("Informe um e-mail válido");
+    setLoading(true);
+    try {
+      // Verificar se o e-mail já existe (verificando no auth)
+      const { data: existingUser } = await supabase.auth.signInWithPassword({
+        email,
+        password: 'temp-check'
+      }).catch(() => ({ data: null }));
+
+      if (existingUser?.user) {
+        toast.error("Este e-mail já está cadastrado. Faça login.");
+        setMode("login");
+        return;
+      }
+
+      // Se não existe, avança para detalhes
+      setStep("details");
+    } catch (err: any) {
+      toast.error("Erro ao verificar e-mail");
+    } finally {
+      setLoading(false);
+    }
   };
 
-  // ---- SIGNUP STEP 3: criar conta ----
-  const onCreateAccount = async (e: React.FormEvent) => {
+  // ---- SIGNUP STEP 2: criar conta ----
+  const onSignup = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!fullName.trim() || fullName.trim().length < 2) return toast.error("Informe seu nome");
-    if (!restaurantName.trim() || restaurantName.trim().length < 2)
-      return toast.error("Informe o nome do restaurante");
+    if (!fullName.trim()) return toast.error("Informe seu nome completo");
+    if (!restaurantName.trim()) return toast.error("Informe o nome do restaurante");
     if (password.length < 6) return toast.error("Senha deve ter ao menos 6 caracteres");
 
     setLoading(true);
     try {
-      const { data, error } = await supabase.functions.invoke("verify-otp", {
-        body: {
-          phone: normalizeForApi(phone),
-          code,
-          password,
-          full_name: fullName.trim(),
-          restaurant_name: restaurantName.trim(),
+      // 1. Criar usuário no Supabase Auth
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            full_name: fullName,
+          },
         },
       });
-      if (error || data?.error) {
-        toast.error(data?.error || error?.message || "Falha ao criar conta");
-        // Se for erro de código, volta pro passo do código
-        if ((data?.error || "").toLowerCase().includes("código")) {
-          setStep("code");
-        }
-        return;
-      }
 
-      // Se a edge function devolveu uma sessão, usa ela
-      if (data?.session?.access_token && data?.session?.refresh_token) {
-        await supabase.auth.setSession({
-          access_token: data.session.access_token,
-          refresh_token: data.session.refresh_token,
+      if (authError) throw authError;
+
+      // 2. Criar perfil na tabela profiles
+      if (authData.user) {
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .insert({
+            id: authData.user.id,
+            full_name: fullName,
+            restaurant_name: restaurantName,
+            whatsapp_addon_active: false,
+          } as any);
+
+        if (profileError) throw profileError;
+
+        // 3. Criar menu inicial para o restaurante
+        const { error: menuError } = await supabase
+          .from('menus')
+          .insert({
+            name: restaurantName,
+            slug: restaurantName.toLowerCase().replace(/\s+/g, '-'),
+            user_id: authData.user.id,
+          } as any);
+
+        if (menuError) throw menuError;
+
+        // 4. Criar role de usuário via Edge Function
+        const { error: roleError } = await supabase.functions.invoke("assign-user-role", {
+          body: {
+            user_id: authData.user.id,
+            role: 'user',
+            permissions: {
+              manage_stores: true,
+              manage_categories: true,
+              manage_products: true,
+              manage_orders: true,
+              view_reports: true
+            }
+          }
         });
-      } else if (data?.internal_email) {
-        // Fallback: faz login com a senha
+
+        if (roleError) throw roleError;
+
+        toast.success("Conta criada com sucesso! Verifique seu e-mail para confirmar.");
+        
+        // Fazer login automático
         await supabase.auth.signInWithPassword({
-          email: data.internal_email,
+          email,
           password,
         });
       }
-      toast.success("Conta criada! Você tem 15 dias grátis 🎉");
-      navigate("/dashboard", { replace: true });
     } catch (err: any) {
       toast.error(err.message || "Erro ao criar conta");
     } finally {
@@ -144,85 +160,56 @@ const Auth = () => {
     }
   };
 
-  const switchMode = (next: Mode) => {
-    setMode(next);
-    setStep("phone");
-    setCode("");
+  const switchMode = (newMode: Mode) => {
+    setMode(newMode);
+    setStep("email");
+    setEmail("");
     setPassword("");
     setFullName("");
     setRestaurantName("");
   };
 
   return (
-    <div className="grid min-h-screen lg:grid-cols-2">
-      {/* Painel lateral */}
-      <div className="hidden gradient-brand p-12 lg:flex lg:flex-col lg:justify-between">
-        <Logo imgClassName="h-20 hidden lg:block" />
-        <div className="text-primary-foreground">
-          <h2 className="text-balance text-4xl font-bold leading-tight">
-            Cadastro 100% pelo WhatsApp.
-          </h2>
-          <p className="mt-4 max-w-md text-primary-foreground/80">
-            Sem e-mail, sem complicação. Você recebe um código no WhatsApp e em segundos
-            está com seu cardápio digital pronto.
-          </p>
+    <div className="min-h-screen flex items-center justify-center bg-background p-4">
+      <div className="w-full max-w-md space-y-8">
+        {/* Logo */}
+        <div className="text-center">
+          <Logo className="mx-auto h-12 w-auto" />
         </div>
-        <div className="text-sm text-primary-foreground/60">
-          © {new Date().getFullYear()} TreexMenu
-        </div>
-      </div>
 
-      {/* Formulário */}
-      <div className="flex items-center justify-center bg-background p-6">
-        <div className="w-full max-w-md">
-          <div className="mb-8 lg:hidden">
-            <Logo imgClassName="h-16 lg:hidden" />
-          </div>
+        {/* Cabeçalho dinâmico */}
+        {mode === "login" ? (
+          <>
+            <h1 className="text-3xl font-bold tracking-tight">Bem-vindo de volta</h1>
+            <p className="mt-2 text-muted-foreground">
+              Faça login na sua conta para gerenciar seu cardápio
+            </p>
+          </>
+        ) : (
+          <>
+            <h1 className="text-3xl font-bold tracking-tight">Criar nova conta</h1>
+            <p className="mt-2 text-muted-foreground">
+              Comece a gerenciar seu cardápio digital hoje mesmo
+            </p>
+          </>
+        )}
 
-          {/* Cabeçalho dinâmico */}
-          {mode === "login" ? (
-            <>
-              <h1 className="text-3xl font-bold tracking-tight">Bem-vindo de volta</h1>
-              <p className="mt-2 text-muted-foreground">
-                Entre com seu WhatsApp e senha.
-              </p>
-            </>
-          ) : step === "phone" ? (
-            <>
-              <h1 className="text-3xl font-bold tracking-tight">Crie sua conta</h1>
-              <p className="mt-2 text-muted-foreground">
-                Vamos enviar um código no seu WhatsApp para confirmar.
-              </p>
-            </>
-          ) : step === "code" ? (
-            <>
-              <h1 className="text-3xl font-bold tracking-tight">Confirme o código</h1>
-              <p className="mt-2 text-muted-foreground">
-                Enviamos 6 dígitos para{" "}
-                <span className="font-semibold text-foreground">{formatPhoneBR(phone)}</span>.
-              </p>
-            </>
-          ) : (
-            <>
-              <h1 className="text-3xl font-bold tracking-tight">Quase lá!</h1>
-              <p className="mt-2 text-muted-foreground">
-                Complete seu cadastro para acessar o painel.
-              </p>
-            </>
-          )}
-
-          {/* LOGIN */}
-          {mode === "login" && (
-            <form onSubmit={onLogin} className="mt-8 space-y-4">
+        {/* LOGIN */}
+        {mode === "login" && (
+          <div className="space-y-6">
+            
+            {/* Formulário E-mail/Senha */}
+            <form onSubmit={onLogin} className="space-y-4">
               <div>
-                <Label htmlFor="phone">WhatsApp</Label>
+                <Label htmlFor="email">E-mail</Label>
                 <Input
-                  id="phone"
-                  inputMode="tel"
-                  value={formatPhoneBR(phone)}
-                  onChange={(e) => setPhone(e.target.value)}
-                  placeholder="(11) 99999-9999"
-                  autoComplete="tel"
+                  id="email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="seu@email.com"
+                  required
+                  disabled={loading}
                 />
               </div>
               <div>
@@ -232,183 +219,138 @@ const Auth = () => {
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  autoComplete="current-password"
+                  placeholder="Mínimo 6 caracteres"
+                  required
+                  disabled={loading}
                 />
               </div>
-              <Button type="submit" variant="cta" size="lg" className="w-full" disabled={loading}>
-                {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Entrar"}
-              </Button>
-            </form>
-          )}
-
-          {/* SIGNUP - PASSO 1: TELEFONE */}
-          {mode === "signup" && step === "phone" && (
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                sendCode();
-              }}
-              className="mt-8 space-y-4"
-            >
-              <div>
-                <Label htmlFor="phone">Seu WhatsApp</Label>
-                <Input
-                  id="phone"
-                  inputMode="tel"
-                  value={formatPhoneBR(phone)}
-                  onChange={(e) => setPhone(e.target.value)}
-                  placeholder="(11) 99999-9999"
-                  autoComplete="tel"
-                />
-                <p className="mt-1.5 text-xs text-muted-foreground">
-                  Enviaremos um código de verificação no seu WhatsApp.
-                </p>
-              </div>
-              <Button type="submit" variant="cta" size="lg" className="w-full" disabled={loading}>
+              <Button type="submit" disabled={loading || !emailValid || password.length < 6} className="w-full">
                 {loading ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 ) : (
-                  <>
-                    <MessageCircle className="mr-2 h-4 w-4" />
-                    Receber código no WhatsApp
-                  </>
+                  "Entrar"
                 )}
               </Button>
             </form>
-          )}
-
-          {/* SIGNUP - PASSO 2: CÓDIGO */}
-          {mode === "signup" && step === "code" && (
-            <form onSubmit={onCodeContinue} className="mt-8 space-y-6">
-              <div className="flex justify-center">
-                <InputOTP maxLength={6} value={code} onChange={setCode}>
-                  <InputOTPGroup>
-                    <InputOTPSlot index={0} className="h-12 w-12 text-lg" />
-                    <InputOTPSlot index={1} className="h-12 w-12 text-lg" />
-                    <InputOTPSlot index={2} className="h-12 w-12 text-lg" />
-                    <InputOTPSlot index={3} className="h-12 w-12 text-lg" />
-                    <InputOTPSlot index={4} className="h-12 w-12 text-lg" />
-                    <InputOTPSlot index={5} className="h-12 w-12 text-lg" />
-                  </InputOTPGroup>
-                </InputOTP>
-              </div>
-
-              <Button
-                type="submit"
-                variant="cta"
-                size="lg"
-                className="w-full"
-                disabled={code.length !== 6}
-              >
-                Continuar
-              </Button>
-
-              <div className="flex items-center justify-between text-sm">
-                <button
-                  type="button"
-                  onClick={() => setStep("phone")}
-                  className="flex items-center gap-1 text-muted-foreground hover:text-foreground"
-                >
-                  <ArrowLeft className="h-4 w-4" />
-                  Trocar número
-                </button>
-                <button
-                  type="button"
-                  disabled={resendIn > 0 || loading}
-                  onClick={sendCode}
-                  className="font-semibold text-primary disabled:cursor-not-allowed disabled:text-muted-foreground"
-                >
-                  {resendIn > 0 ? `Reenviar em ${resendIn}s` : "Reenviar código"}
-                </button>
-              </div>
-            </form>
-          )}
-
-          {/* SIGNUP - PASSO 3: DETALHES */}
-          {mode === "signup" && step === "details" && (
-            <form onSubmit={onCreateAccount} className="mt-8 space-y-4">
-              <div>
-                <Label htmlFor="fullName">Seu nome</Label>
-                <Input
-                  id="fullName"
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  placeholder="Maria Silva"
-                />
-              </div>
-              <div>
-                <Label htmlFor="restaurantName">Nome do restaurante</Label>
-                <Input
-                  id="restaurantName"
-                  value={restaurantName}
-                  onChange={(e) => setRestaurantName(e.target.value)}
-                  placeholder="Burger House"
-                />
-              </div>
-              <div>
-                <Label htmlFor="password">Crie uma senha</Label>
-                <Input
-                  id="password"
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Mínimo 6 caracteres"
-                  autoComplete="new-password"
-                />
-              </div>
-
-              <Button
-                type="submit"
-                variant="cta"
-                size="lg"
-                className="w-full"
-                disabled={loading}
-              >
-                {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Criar conta grátis"}
-              </Button>
-
-              <button
-                type="button"
-                onClick={() => setStep("code")}
-                className="flex w-full items-center justify-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-              >
-                <ArrowLeft className="h-4 w-4" />
-                Voltar
-              </button>
-            </form>
-          )}
-
-          {/* Trocar mode */}
-          <p className="mt-6 text-center text-sm text-muted-foreground">
-            {mode === "signup" ? (
-              <>
-                Já tem conta?{" "}
-                <button
-                  onClick={() => switchMode("login")}
-                  className="font-semibold text-primary hover:underline"
-                >
-                  Entrar
-                </button>
-              </>
-            ) : (
-              <>
-                Ainda não tem conta?{" "}
-                <button
-                  onClick={() => switchMode("signup")}
-                  className="font-semibold text-primary hover:underline"
-                >
-                  Criar conta
-                </button>
-              </>
-            )}
-          </p>
-
-          <div className="mt-8 text-center">
-            <Link to="/" className="text-sm text-muted-foreground hover:text-foreground">
-              ← Voltar para o início
-            </Link>
           </div>
+        )}
+
+        {/* SIGNUP */}
+        {mode === "signup" && (
+          <>
+            {step === "email" && (
+              <div className="space-y-4">
+                <div>
+                  <Label htmlFor="email">E-mail</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="seu@email.com"
+                    required
+                    disabled={loading}
+                  />
+                </div>
+                <Button
+                  onClick={checkEmail}
+                  disabled={loading || !emailValid}
+                  className="w-full"
+                >
+                  {loading ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    "Continuar"
+                  )}
+                </Button>
+              </div>
+            )}
+
+            {step === "details" && (
+              <form onSubmit={onSignup} className="space-y-4">
+                <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="fullName">Seu Nome</Label>
+                    <Input
+                      id="fullName"
+                      value={fullName}
+                      onChange={(e) => setFullName(e.target.value)}
+                      placeholder="João Silva"
+                      required
+                      disabled={loading}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="restaurantName">Nome do Restaurante</Label>
+                    <Input
+                      id="restaurantName"
+                      value={restaurantName}
+                      onChange={(e) => setRestaurantName(e.target.value)}
+                      placeholder="Restaurante Sabores"
+                      required
+                      disabled={loading}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="signupPassword">Senha</Label>
+                    <Input
+                      id="signupPassword"
+                      type="password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="Mínimo 6 caracteres"
+                      required
+                      disabled={loading}
+                    />
+                  </div>
+                </div>
+                <Button
+                  type="submit"
+                  disabled={loading || !fullName.trim() || !restaurantName.trim() || password.length < 6}
+                  className="w-full"
+                >
+                  {loading ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    "Criar conta"
+                  )}
+                </Button>
+              </form>
+            )}
+          </>
+        )}
+
+        {/* Links */}
+        <div className="text-center text-sm">
+          {mode === "login" ? (
+            <>
+              Não tem conta?{" "}
+              <button
+                onClick={() => switchMode("signup")}
+                className="font-semibold text-primary hover:underline"
+              >
+                Criar conta gratuita
+              </button>
+            </>
+          ) : (
+            <>
+              Já tem conta?{" "}
+              <button
+                onClick={() => switchMode("login")}
+                className="font-semibold text-primary hover:underline"
+              >
+                Entrar
+              </button>
+            </>
+          )}
+        </div>
+
+        {/* Voltar */}
+        <div className="text-center">
+          <Link to="/" className="inline-flex items-center text-sm text-muted-foreground hover:text-primary">
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            Voltar para o início
+          </Link>
         </div>
       </div>
     </div>

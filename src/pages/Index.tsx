@@ -32,7 +32,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useSubdomain } from "@/hooks/useSubdomain";
 import { getMenuBySlug } from "@/lib/subdomainMenu";
 
-const WHATSAPP_SIGNUP_URL = "https://wa.me/5518991913165?text=" + encodeURIComponent("Olá! Quero criar minha conta no TreexMenu e começar o teste grátis 🚀");
+const SIGNUP_URL = "/auth?mode=signup";
 
 
 const plans = [
@@ -123,7 +123,7 @@ const CountUp = ({ value, duration = 1400 }: { value: number; duration?: number 
 const faqs = [
   {
     q: "Como funciona o cadastro?",
-    a: "Você informa seu WhatsApp, recebe um código de 6 dígitos por mensagem, cria uma senha e pronto. Sem e-mail, sem complicação. 15 dias grátis para testar tudo.",
+    a: "Você informa seu e-mail, cria uma senha e pronto. Cadastro simples e rápido, sem complicação. 15 dias grátis para testar tudo.",
   },
   {
     q: "Como o cliente faz o pedido?",
@@ -247,9 +247,9 @@ const Index = () => {
             </p>
             <div className="mt-8 flex flex-wrap items-center gap-3">
               <Button asChild variant="cta" size="xl">
-                <a href={WHATSAPP_SIGNUP_URL} target="_blank" rel="noopener noreferrer">
+                <Link to={SIGNUP_URL}>
                   Teste 15 dias grátis <ArrowRight className="ml-1" />
-                </a>
+                </Link>
               </Button>
               <Button asChild variant="outline" size="xl">
                 <a href="#recursos">Ver recursos</a>
@@ -335,9 +335,9 @@ const Index = () => {
                 </ul>
                 <div className="mt-8">
                   <Button asChild variant="cta" size="lg">
-                    <a href={WHATSAPP_SIGNUP_URL} target="_blank" rel="noopener noreferrer">
+                    <Link to={SIGNUP_URL}>
                       Quero a IA atendendo <ArrowRight className="ml-1 h-4 w-4" />
-                    </a>
+                    </Link>
                   </Button>
                 </div>
               </div>
@@ -648,9 +648,9 @@ const Index = () => {
               link compartilhável...
             </p>
             <Button asChild variant="cta" size="lg" className="mt-5">
-              <a href={WHATSAPP_SIGNUP_URL} target="_blank" rel="noopener noreferrer">
+              <Link to={SIGNUP_URL}>
                 Quero testar tudo grátis <ArrowRight className="ml-1 h-4 w-4" />
-              </a>
+              </Link>
             </Button>
           </div>
         </div>
@@ -764,7 +764,7 @@ const Index = () => {
                   className="mt-7 w-full"
                   size="lg"
                 >
-                  <a href={WHATSAPP_SIGNUP_URL} target="_blank" rel="noopener noreferrer">{p.cta}</a>
+                  <a href={SIGNUP_URL}>{p.cta}</a>
                 </Button>
               </div>
             ))}
@@ -812,12 +812,12 @@ const Index = () => {
               Pronto para automatizar seu restaurante?
             </h2>
             <p className="relative mx-auto mt-4 max-w-xl text-primary-foreground/85">
-              Cadastro em 30 segundos pelo WhatsApp. 15 dias grátis para testar tudo.
+              Cadastro simples e rápido. 15 dias grátis para testar tudo.
             </p>
             <Button asChild variant="cta" size="xl" className="relative mt-8">
-              <a href={WHATSAPP_SIGNUP_URL} target="_blank" rel="noopener noreferrer">
+              <Link to={SIGNUP_URL}>
                 ​Testar Gratis <ArrowRight className="ml-1" />
-              </a>
+              </Link>
             </Button>
           </div>
         </div>
