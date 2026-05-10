@@ -1,13 +1,15 @@
-import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { useState, useEffect, useMemo, useCallback } from "react";
+import { useSearchParams, useNavigate, Link } from "react-router-dom";
+import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/contexts/AuthContext";
-import { Logo } from "@/components/Logo";
-import { toast } from "sonner";
-import { ArrowLeft, Mail, Loader2, User, Store } from "lucide-react";
+import { LoadingButton } from "@/components/ui/LoadingButton";
+import { useAuthErrorHandler } from "@/hooks/useAuthErrorHandler";
+import { useDebouncedCallback, usePreventDoubleClick } from "@/hooks/useDebounce";
+import { ArrowLeft, Mail, Loader2, User, Store, Lock } from "lucide-react";
 
 type Mode = "login" | "signup";
 type Step = "email" | "details";
@@ -30,78 +32,169 @@ const Auth = () => {
     if (user) navigate("/dashboard", { replace: true });
   }, [user, navigate]);
 
+  // Hooks para tratamento de erros e prevenção de múltiplos submits
+  const authErrorHandler = useAuthErrorHandler({
+    showToast: true,
+    logToConsole: true,
+    blockOnError: false,
+    retryOnError: false
+  });
+
+  const { isDisabled, preventDoubleClick } = usePreventDoubleClick(2000);
+
+  // Debounce para validação de email
+  const debouncedEmailCheck = useDebouncedCallback(
+    () => setStep("details"),
+    { delay: 500 }
+  );
+
   const emailValid = useMemo(() => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     return emailRegex.test(email);
   }, [email]);
 
-  // ---- LOGIN COM GMAIL ----
-  const onLogin = async (e: React.FormEvent) => {
+  // ---- LOGIN ----
+  const onLogin = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!emailValid) return toast.error("Informe um e-mail válido");
-    if (password.length < 6) return toast.error("Senha deve ter ao menos 6 caracteres");
-    setLoading(true);
-    try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-      if (error) throw error;
-      toast.success("Login realizado com sucesso!");
-    } catch (err: any) {
-      toast.error("E-mail ou senha incorretos");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  
-  // ---- SIGNUP STEP 1: verificar e-mail ----
-  const checkEmail = async () => {
+    
+    // Validações
     if (!emailValid) {
-      return toast.error("Informe um e-mail válido");
+      toast.error("Informe um e-mail válido");
+      return;
     }
-    // Avança diretamente para detalhes
-    // Supabase vai validar email duplicado no signUp()
-    setStep("details");
-  };
+    if (password.length < 6) {
+      toast.error("Senha deve ter ao menos 6 caracteres");
+      return;
+    }
+
+    setLoading(true);
+    
+    const result = await authErrorHandler.executeWithErrorHandling(
+      async () => {
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+        
+        if (error) throw error;
+        
+        // Sucesso - redirecionar para dashboard
+        toast.success("Login realizado com sucesso!");
+        navigate("/dashboard", { replace: true });
+        
+        return data;
+      },
+      "LOGIN",
+      { email: email.replace(/(.{2}).*(@.*)/, "$1***$2") } // Mascarar email no log
+    );
+
+    setLoading(false);
+    
+    if (!result) {
+      // Erro já foi tratado pelo handler
+      return;
+    }
+
+  }, [emailValid, password, email, authErrorHandler, navigate]);
+
+  // ---- SIGNUP STEP 1: verificar e-mail ----
+  const checkEmail = useCallback(() => {
+    if (!emailValid) {
+      toast.error("Informe um e-mail válido");
+      return;
+    }
+    
+    // Avança para detalhes com debounce
+    debouncedEmailCheck();
+    
+    // Feedback visual
+    toast.success("E-mail válido! Continue preenchendo seus dados.");
+  }, [emailValid, debouncedEmailCheck]);
 
   // ---- SIGNUP STEP 2: criar conta ----
-  const onSignup = async (e: React.FormEvent) => {
+  const onSignup = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!fullName.trim()) return toast.error("Informe seu nome completo");
-    if (!restaurantName.trim()) return toast.error("Informe o nome do restaurante");
-    if (password.length < 6) return toast.error("Senha deve ter ao menos 6 caracteres");
+    
+    // Prevenir múltiplos submits
+    if (isDisabled) {
+      console.warn('🚫 Multiple submit attempts blocked');
+      return;
+    }
+    
+    // Validações
+    if (!fullName.trim()) {
+      toast.error("Informe seu nome completo");
+      return;
+    }
+    if (!restaurantName.trim()) {
+      toast.error("Informe o nome do restaurante");
+      return;
+    }
+    if (password.length < 6) {
+      toast.error("Senha deve ter ao menos 6 caracteres");
+      return;
+    }
 
     setLoading(true);
-    try {
-      // 1. Apenas criar usuário no Supabase Auth
-      // O resto (profile, menu, roles) será criado automaticamente pelo trigger
-      // quando o usuário confirmar o e-mail
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: {
-            full_name: fullName,
-            restaurant_name: restaurantName,
-          },
+    
+    preventDoubleClick(() => {
+      // Lógica principal com tratamento de erros
+      authErrorHandler.executeWithErrorHandling(
+        async () => {
+          console.log('🚀 Starting signup process for:', email.replace(/(.{2}).*(@.*)/, "$1***$2"));
+          
+          // 1. Apenas criar usuário no Supabase Auth
+          // O resto (profile, menu, roles) será criado automaticamente pelo trigger
+          // quando o usuário confirmar o e-mail
+          const { data: authData, error: authError } = await supabase.auth.signUp({
+            email,
+            password,
+            options: {
+              data: {
+                full_name: fullName,
+                restaurant_name: restaurantName,
+              },
+            },
+          });
+
+          if (authError) throw authError;
+
+          console.log('✅ Signup successful - confirmation email sent');
+          
+          // Sucesso
+          toast.success("Conta criada! Verifique seu e-mail para confirmar o cadastro.");
+          
+          // Redirecionar para login após cadastro bem-sucedido
+          setTimeout(() => {
+            setMode("login");
+            setStep("email");
+            // Limpar formulário
+            setFullName("");
+            setRestaurantName("");
+            setPassword("");
+          }, 2000);
+          
+          return authData;
         },
+        "SIGNUP",
+        { 
+          email: email.replace(/(.{2}).*(@.*)/, "$1***$2"),
+          restaurantName,
+          hasFullName: !!fullName.trim()
+        }
+      ).then((result) => {
+        setLoading(false);
+        
+        if (!result) {
+          // Erro já foi tratado pelo handler
+          console.log('❌ Signup failed - error handled by authErrorHandler');
+        } else {
+          console.log('✅ Signup completed successfully');
+        }
       });
-
-      if (authError) throw authError;
-
-      toast.success("Conta criada! Verifique seu e-mail para confirmar o cadastro.");
-      
-      // Redirecionar para login após cadastro bem-sucedido
-      setMode("login");
-      
-    } catch (err: any) {
-      toast.error(err.message || "Erro ao criar conta");
-    } finally {
-      setLoading(false);
-    }
-  };
+    });
+    
+  }, [fullName, restaurantName, password, email, isDisabled, preventDoubleClick, authErrorHandler]);
 
   const switchMode = (newMode: Mode) => {
     setMode(newMode);
@@ -117,7 +210,7 @@ const Auth = () => {
       <div className="w-full max-w-md space-y-8">
         {/* Logo */}
         <div className="text-center">
-          <Logo className="mx-auto h-12 w-auto" />
+          <h1 className="text-2xl font-bold text-primary">FrodFast</h1>
         </div>
 
         {/* Cabeçalho dinâmico */}
