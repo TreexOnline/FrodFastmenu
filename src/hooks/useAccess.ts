@@ -36,7 +36,7 @@ export const useAccess = (): AccessInfo => {
     let active = true;
     supabase
       .from("profiles")
-      .select("trial_started_at,trial_ends_at,plan_type,plan_active,plan_expires_at,created_at")
+      .select("trial_started_at,trial_ends_at,current_plan,plan_active,plan_expires_at,created_at")
       .eq("id", user.id)
       .maybeSingle()
       .then(({ data }) => {
@@ -59,7 +59,7 @@ export const useAccess = (): AccessInfo => {
           isTrial: !planActive && trialActive,
           trialDaysLeft,
           trialEndsAt: trialEnds,
-          planType: data?.plan_type ?? null,
+          planType: data?.current_plan ?? null,
           planActive,
           planExpiresAt: planExpires,
         });

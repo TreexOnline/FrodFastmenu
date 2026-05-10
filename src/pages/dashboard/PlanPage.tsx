@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Check, Sparkles, Crown, CalendarClock, Zap, ArrowRight, AlertTriangle, Bot } from "lucide-react";
 import { toast } from "sonner";
 import { useAccess } from "@/hooks/useAccess";
+import { useNavigate } from "react-router-dom";
 
 type PlanKey = "free" | "monthly" | "combo" | "annual";
 
@@ -71,10 +72,11 @@ const PlanPage = () => {
   const access = useAccess();
   const loading = access.loading;
   const currentPlan = access.planActive ? (access.planType ?? "monthly") : "free";
+  const navigate = useNavigate();
 
-  const WHATSAPP_NUMBER = "5518991913165";
+  const WHATSAPP_NUMBER = "18991913165";
   const openWhatsApp = (message: string) => {
-    const url = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`;
+    const url = `https://wa.me/55${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`;
     window.open(url, "_blank", "noopener,noreferrer");
   };
 
@@ -83,9 +85,8 @@ const PlanPage = () => {
       toast.info("Este já é o seu plano atual.");
       return;
     }
-    openWhatsApp(
-      `Olá! Quero assinar o ${p.name} (${p.price}${p.period}) do TreexMenu. Pode me enviar as instruções de pagamento?`
-    );
+    // Redirecionar para checkout com o plano selecionado
+    navigate(`/checkout?plan=${p.key}`);
   };
 
   const isFree = currentPlan === "free";
@@ -313,7 +314,7 @@ const PlanPage = () => {
               <Button
                 variant="cta"
                 className="mt-4 w-full"
-                onClick={() => openWhatsApp("Olá! Quero adicionar a IA Atendente no WhatsApp (R$ 99/mês) ao meu plano TreexMenu. Pode me enviar as instruções?")}
+                onClick={() => openWhatsApp("Olá! Quero adicionar a IA Atendente no WhatsApp (R$ 99/mês) ao meu plano FrodFast. Pode me enviar as instruções?")}
               >
                 Adicionar IA <ArrowRight />
               </Button>

@@ -30,6 +30,9 @@ const Auth = lazy(() => import("./pages/Auth"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 const PublicMenu = lazy(() => import("./pages/PublicMenu"));
 const Admin = lazy(() => import("./pages/Admin"));
+const Checkout = lazy(() => import("./pages/payment/Checkout"));
+const PaymentSuccess = lazy(() => import("./pages/payment/PaymentSuccess"));
+const PaymentFailed = lazy(() => import("./pages/payment/PaymentFailed"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -63,6 +66,9 @@ const App = () => (
                 <Route path="/auth" element={<Auth />} />
                 <Route path="/menu/:slug" element={<PublicMenu />} />
                 <Route path="/admin" element={<Admin />} />
+                <Route path="/checkout" element={<Checkout />} />
+                <Route path="/payment/success" element={<PaymentSuccess />} />
+                <Route path="/payment/failed" element={<PaymentFailed />} />
                 <Route path="/dashboard" element={<DashboardLayout />}>
                   <Route index element={<MenusList />} />
                   <Route path="cardapio/:menuId" element={<MenuEditor />} />

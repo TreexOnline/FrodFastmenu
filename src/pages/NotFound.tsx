@@ -5,8 +5,19 @@ const NotFound = () => {
   const location = useLocation();
 
   useEffect(() => {
-    console.error("404 Error: User attempted to access non-existent route:", location.pathname);
-  }, [location.pathname]);
+    console.error(`404 Error: Route "${location.pathname}" not found`, {
+      pathname: location.pathname,
+      search: location.search,
+      hash: location.hash,
+      timestamp: new Date().toISOString(),
+      userAgent: navigator.userAgent
+    });
+    
+    // Log específico para checkout
+    if (location.pathname === '/checkout') {
+      console.error('CRITICAL: Checkout route missing - payment flow broken');
+    }
+  }, [location]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-muted">
