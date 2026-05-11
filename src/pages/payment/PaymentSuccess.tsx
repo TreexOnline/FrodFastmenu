@@ -17,34 +17,72 @@ const PaymentSuccess: React.FC = () => {
   const planId = searchParams.get('plan');
 
   useEffect(() => {
+    if (!paymentId || !user) {
+      navigate('/dashboard');
+      return;
+    }
+
+    let isMounted = true;
+    let intervalId: NodeJS.Timeout | null = null;
+
     const checkPaymentStatus = async () => {
-      if (!paymentId || !user) {
-        navigate('/dashboard');
-        return;
-      }
+      if (!isMounted) return;
 
       try {
         const paymentData = await paymentService.getPaymentStatus(paymentId);
+        
+        if (!isMounted) return;
+        
         setPayment(paymentData);
 
-        // Se o pagamento não foi confirmado, verificar novamente após alguns segundos
-        if (paymentData.status === 'pending') {
-          setTimeout(() => {
-            checkPaymentStatus();
-          }, 5000);
+        // Verificar status do pagamento
+        if (paymentData.status === 'paid') {
+          // Pagamento confirmado - parar polling
+          setLoading(false);
+          if (intervalId) {
+            clearInterval(intervalId);
+            intervalId = null;
+          }
+        } else if (paymentData.status === 'pending') {
+          // Pagamento pendente - continuar polling
+          // Não faz nada aqui, o setInterval cuidará disso
+        } else {
+          // Pagamento falhou ou expirou - parar polling e redirecionar
+          if (intervalId) {
+            clearInterval(intervalId);
+            intervalId = null;
+          }
+          if (isMounted) {
+            navigate(`/payment-failed?payment_id=${paymentId}&error=${paymentData.status}`);
+          }
         }
       } catch (error) {
         console.error('Erro ao verificar pagamento:', error);
-      } finally {
-        setLoading(false);
+        if (intervalId) {
+          clearInterval(intervalId);
+          intervalId = null;
+        }
+        if (isMounted) {
+          navigate(`/payment-failed?payment_id=${paymentId}&error=network_error`);
+        }
       }
     };
 
-    if (paymentId) {
-      checkPaymentStatus();
-    } else {
-      setLoading(false);
+    // Primeira verificação imediata
+    checkPaymentStatus();
+
+    // Configurar polling apenas se ainda estiver montado
+    if (isMounted) {
+      intervalId = setInterval(checkPaymentStatus, 5000);
     }
+
+    // Cleanup function
+    return () => {
+      isMounted = false;
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+    };
   }, [paymentId, user, navigate]);
 
   const getPlanName = (planId: string | null) => {

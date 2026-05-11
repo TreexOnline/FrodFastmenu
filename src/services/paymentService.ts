@@ -1,7 +1,100 @@
 import { supabase } from '@/integrations/supabase/client';
 
 // Configuração da API TreexPay via proxy seguro
-const TREEXPAY_PROXY_URL = 'https://fhwfonispezljglrclia.supabase.co/functions/v1/treexpay-proxy';
+const TREEXPAY_API_URL = 'https://kfujkvihymclesabqmsz.supabase.co/functions/v1/treexpay-proxy';
+
+// Interface para persistência do checkout
+interface CheckoutState {
+  selectedPlan?: string;
+  paymentMethod?: 'pix' | 'credit_card';
+  currentStep?: string;
+  generatedPix?: {
+    payment_id?: string;
+    pix_code?: string;
+    qr_code?: string;
+    amount?: number;
+    plan_id?: string;
+    status?: string;
+    expires_at?: string;
+    created_at?: string;
+  };
+  timestamp?: string;
+}
+
+// Funções de persistência
+const CheckoutPersistence = {
+  // Salvar estado do checkout
+  save(state: Partial<CheckoutState>) {
+    try {
+      const currentState = CheckoutPersistence.get();
+      const updatedState = { ...currentState, ...state, timestamp: new Date().toISOString() };
+      localStorage.setItem('frodfast_checkout', JSON.stringify(updatedState));
+    } catch (error) {
+      console.error('Erro ao salvar estado do checkout:', error);
+    }
+  },
+
+  // Obter estado do checkout
+  get(): CheckoutState {
+    try {
+      const stored = localStorage.getItem('frodfast_checkout');
+      if (!stored) return {};
+      
+      const state = JSON.parse(stored);
+      // Validar se o estado não está muito antigo (24 horas)
+      if (state.timestamp) {
+        const storedTime = new Date(state.timestamp);
+        const now = new Date();
+        const hoursDiff = (now.getTime() - storedTime.getTime()) / (1000 * 60 * 60);
+        
+        if (hoursDiff > 24) {
+          CheckoutPersistence.clear();
+          return {};
+        }
+      }
+      
+      return state;
+    } catch (error) {
+      console.error('Erro ao obter estado do checkout:', error);
+      return {};
+    }
+  },
+
+  // Limpar estado do checkout
+  clear() {
+    try {
+      localStorage.removeItem('frodfast_checkout');
+    } catch (error) {
+      console.error('Erro ao limpar estado do checkout:', error);
+    }
+  },
+
+  // Validar integridade do PIX
+  validatePixIntegrity(pixData: CheckoutState['generatedPix']): boolean {
+    if (!pixData || !pixData.payment_id) return false;
+    
+    // Validar tempo de expiração (removida validação de usuário para permitir persistência)
+    if (pixData.expires_at) {
+      const expiryTime = new Date(pixData.expires_at);
+      const now = new Date();
+      return now < expiryTime;
+    }
+    
+    return false;
+  },
+
+  // Limpar PIX expirados automaticamente
+  cleanupExpiredPix() {
+    const state = CheckoutPersistence.get();
+    if (state.generatedPix && !CheckoutPersistence.validatePixIntegrity(state.generatedPix)) {
+      console.log('Limpando PIX expirado:', state.generatedPix.payment_id);
+      CheckoutPersistence.save({ generatedPix: undefined });
+    }
+  }
+};
+
+// Exportar CheckoutPersistence para uso em outros módulos
+export { CheckoutPersistence };
 
 // Tipos para a API
 export interface PaymentRequest {
@@ -12,6 +105,7 @@ export interface PaymentRequest {
   webhook_url?: string;
   metadata?: Record<string, any>;
   installments?: number;
+  idempotency_key?: string;
   customer?: {
     name: string;
     document: string;
@@ -48,7 +142,7 @@ export interface Plan {
   id: string;
   name: string;
   price: number;
-  duration: 'monthly' | 'annual';
+  duration: 'monthly' | 'trimester' | 'annual';
   features: string[];
   menuLimit: number;
   popular?: boolean;
@@ -59,7 +153,7 @@ export const PLANS: Plan[] = [
   {
     id: 'monthly',
     name: 'Plano Mensal',
-    price: 49.90,
+    price: 14800,
     duration: 'monthly',
     features: [
       'Até 2 cardápios',
@@ -74,17 +168,13 @@ export const PLANS: Plan[] = [
   {
     id: 'combo',
     name: 'Plano Combo',
-    price: 89.90,
-    duration: 'monthly',
+    price: 38000,
+    duration: 'trimester',
     features: [
       'Até 5 cardápios',
-      'Produtos ilimitados',
-      'Categorias ilimitadas',
-      'Adicionais ilimitados',
+      'Tudo do Mensal',
       'Suporte prioritário',
-      'QR Code personalizado',
-      'Relatórios avançados',
-      'Exportação de dados'
+      'Sem renovação automática'
     ],
     menuLimit: 5,
     popular: true
@@ -92,19 +182,13 @@ export const PLANS: Plan[] = [
   {
     id: 'annual',
     name: 'Plano Anual',
-    price: 899.90,
+    price: 114800,
     duration: 'annual',
     features: [
       'Até 5 cardápios',
-      'Produtos ilimitados',
-      'Categorias ilimitadas',
-      'Adicionais ilimitados',
-      'Suporte dedicado',
-      'QR Code personalizado',
-      'Relatórios avançados',
-      'Exportação de dados',
-      '12 meses pelo preço de 10',
-      'API Access'
+      'Tudo do Combo',
+      'Atendimento dedicado',
+      'Acesso antecipado a novidades'
     ],
     menuLimit: 5
   }
@@ -112,46 +196,97 @@ export const PLANS: Plan[] = [
 
 class PaymentService {
   private async makeRequest<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
-    const url = `${TREEXPAY_PROXY_URL}/${endpoint}`;
+    const url = endpoint
+      ? `${TREEXPAY_API_URL}/${endpoint}`
+      : TREEXPAY_API_URL;
     
-    const response = await fetch(url, {
-      ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
-    });
+    const MAX_RETRIES = 3;
+    const BASE_DELAY = 1000; // 1 segundo
+    let lastError: any = null;
 
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
-      throw new Error(error.message || `HTTP ${response.status}: ${response.statusText}`);
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        const response = await fetch(url, {
+          ...options,
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+            'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+            ...options.headers,
+          },
+        });
+
+        if (response.ok) {
+          return response.json();
+        }
+
+        // Parse error for retry logic
+        const error = await response.json().catch(() => ({}));
+        lastError = error;
+
+        // Retry only for specific errors
+        const shouldRetry = 
+          response.status === 408 || // Timeout
+          response.status === 429 || // Rate limit
+          response.status === 500 || // Internal server error
+          response.status === 502 || // Bad gateway
+          response.status === 503;   // Service unavailable
+
+        if (!shouldRetry || attempt === MAX_RETRIES) {
+          throw new Error(error.message || `HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        // Exponential backoff: 1s, 2s, 4s
+        const delay = BASE_DELAY * Math.pow(2, attempt - 1);
+        await new Promise(resolve => setTimeout(resolve, delay));
+
+      } catch (error) {
+        lastError = error;
+        
+        if (attempt === MAX_RETRIES) {
+          throw error;
+        }
+        
+        // Wait before retry
+        const delay = BASE_DELAY * Math.pow(2, attempt - 1);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
     }
 
-    return response.json();
+    // This should never be reached, but TypeScript needs it
+    throw lastError;
   }
 
   /**
    * Criar pagamento PIX
    */
   async createPixPayment(
-    amount: number,
+    planId: string,
     description: string,
     customerEmail: string,
-    metadata?: Record<string, any>
+    metadata?: Record<string, any>,
+    idempotencyKey?: string
   ): Promise<PaymentResponse> {
-    return this.makeRequest<PaymentResponse>('/payments', {
+    // Buscar preço do plano
+    const plan = PLANS.find(p => p.id === planId);
+    if (!plan) {
+      throw new Error('Plano não encontrado');
+    }
+
+    return this.makeRequest<PaymentResponse>('payments', {
       method: 'POST',
       body: JSON.stringify({
-        amount,
+        amount: plan.price / 100, // Converter centavos para reais
         paymentMethod: 'pix',
         description,
         customer_email: customerEmail,
-        webhook_url: `${window.location.origin}/api/payment-webhook`,
+        webhook_url: 'https://kfujkvihymclesabqmsz.supabase.co/functions/v1/payment-webhook',
         metadata: {
           ...metadata,
           source: 'frodfast_web',
           timestamp: new Date().toISOString()
-        }
+        },
+        idempotency_key: idempotencyKey
       }),
     });
   }
@@ -160,36 +295,55 @@ class PaymentService {
    * Criar pagamento com cartão de crédito
    */
   async createCreditCardPayment(
-    amount: number,
+    planId: string,
     description: string,
-    customer: PaymentRequest['customer'],
-    card: PaymentRequest['card'],
-    installments: number = 1,
-    metadata?: Record<string, any>
+    customer: {
+      name: string;
+      document: string;
+      email?: string;
+      phone?: string;
+    },
+    card: {
+      number: string;
+      cvv: string;
+      month: string;
+      year: string;
+      firstName?: string;
+      lastName?: string;
+    },
+    installments: number,
+    metadata?: Record<string, any>,
+    idempotencyKey?: string
   ): Promise<PaymentResponse> {
-    return this.makeRequest<PaymentResponse>('/payments', {
+    // Buscar preço do plano
+    const plan = PLANS.find(p => p.id === planId);
+    if (!plan) {
+      throw new Error('Plano não encontrado');
+    }
+
+    return this.makeRequest<PaymentResponse>('payments', {
       method: 'POST',
       body: JSON.stringify({
-        amount,
+        amount: plan.price / 100, // Converter centavos para reais
         paymentMethod: 'credit_card',
         description,
         installments,
         customer: {
           ...customer,
-          ip: this.getClientIP(), // Adiciona IP real para anti-fraude
         },
         card: {
           ...card,
           firstName: card.firstName || customer.name?.split(' ')[0],
           lastName: card.lastName || customer.name?.split(' ').slice(1).join(' ')
         },
-        webhook_url: `${window.location.origin}/api/payment-webhook`,
+        webhook_url: 'https://kfujkvihymclesabqmsz.supabase.co/functions/v1/payment-webhook',
         metadata: {
           ...metadata,
           source: 'frodfast_web',
           user_agent: navigator.userAgent,
           timestamp: new Date().toISOString()
-        }
+        },
+        idempotency_key: idempotencyKey
       }),
     });
   }
@@ -198,7 +352,7 @@ class PaymentService {
    * Consultar status do pagamento
    */
   async getPaymentStatus(paymentId: string): Promise<PaymentResponse> {
-    return this.makeRequest<PaymentResponse>(`/payments/${paymentId}`);
+    return this.makeRequest<PaymentResponse>(`payments/${paymentId}`);
   }
 
   /**
@@ -215,18 +369,10 @@ class PaymentService {
       ...(status && { status })
     });
     
-    return this.makeRequest<PaymentResponse[]>(`/payments?${params}`);
+    return this.makeRequest<PaymentResponse[]>(`payments?${params}`);
   }
 
-  /**
-   * Obter IP real do cliente (anti-fraude)
-   */
-  private getClientIP(): string {
-    // Em produção, isso viria do backend ou de um serviço de IP detection
-    // Por enquanto, usa um placeholder
-    return '0.0.0.0';
-  }
-
+  
   /**
    * Validar dados do cartão
    */
@@ -257,9 +403,10 @@ class PaymentService {
       errors.push('Ano de validade inválido');
     }
 
-    // Validação data de expiração
+    // Validação data de expiração - usar último dia do mês
     if (month && year) {
-      const expiryDate = new Date(year, month - 1);
+      const lastDayOfMonth = new Date(year, month, 0).getDate();
+      const expiryDate = new Date(year, month - 1, lastDayOfMonth, 23, 59, 59);
       const now = new Date();
       if (expiryDate < now) {
         errors.push('Cartão expirado');
@@ -340,6 +487,12 @@ class PaymentService {
     amount: number,
     status: string
   ) {
+    // Validar resposta da API antes de salvar
+    if (!paymentId) {
+      console.error('Resposta inválida da API:', paymentId);
+      throw new Error('API não retornou ID do pagamento');
+    }
+
     const { data, error } = await supabase
       .from('payment_orders')
       .insert({
@@ -351,7 +504,6 @@ class PaymentService {
         created_at: new Date().toISOString()
       })
       .select()
-      .single();
 
     if (error) {
       console.error('Erro ao salvar pedido:', error);
@@ -371,7 +523,7 @@ class PaymentService {
         status,
         updated_at: new Date().toISOString()
       })
-      .eq('payment_id', paymentId)
+      .eq('id', paymentId)
       .select()
       .single();
 

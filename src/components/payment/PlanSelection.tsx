@@ -47,12 +47,14 @@ export const PlanSelection: React.FC<PlanSelectionProps> = ({ onPlanSelect }) =>
     return new Intl.NumberFormat('pt-BR', {
       style: 'currency',
       currency: 'BRL'
-    }).format(price);
+    }).format(price / 100);
   };
 
   const getMonthlyPrice = (plan: Plan) => {
     if (plan.duration === 'annual') {
       return formatPrice(plan.price / 12);
+    } else if (plan.duration === 'trimester') {
+      return formatPrice(plan.price / 3);
     }
     return formatPrice(plan.price);
   };
@@ -129,6 +131,11 @@ export const PlanSelection: React.FC<PlanSelectionProps> = ({ onPlanSelect }) =>
                 {plan.duration === 'annual' && (
                   <div className="text-sm text-gray-600 mt-1">
                     {getMonthlyPrice(plan)}/mês (12x)
+                  </div>
+                )}
+                {plan.duration === 'trimester' && (
+                  <div className="text-sm text-gray-600 mt-1">
+                    {getMonthlyPrice(plan)}/mês (3x)
                   </div>
                 )}
                 {plan.duration === 'monthly' && (

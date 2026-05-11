@@ -1,122 +1,167 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 
-const TREEXPAY_API_URL = /removi para subir no git.
-const API_KEY = /removi paraa subir no git
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, GET, PATCH, OPTIONS',
+  'Access-Control-Allow-Headers':
+    'authorization, x-client-info, apikey, content-type',
 }
 
-interface ProxyRequest {
-  method: string;
-  path: string;
-  body?: any;
-  headers?: Record<string, string>;
-}
+const API_URL =
+  'https://kfujkvihymclesabqmsz.supabase.co/functions/v1/api-gateway'
 
-serve(async (req: Request) => {
-  // Handle CORS
+const API_KEY = Deno.env.get('TREEXPAY_SECRET_KEY')
+
+// Rate limiting simples por IP
+const rateLimitMap = new Map<string, { count: number; resetTime: number }>()
+
+const RATE_LIMIT = 60 // 60 requisições por minuto
+const WINDOW_MS = 60 * 1000 // 1 minuto
+
+serve(async (req) => {
+
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
+    return new Response('ok', {
+      headers: corsHeaders,
+    })
+  }
+
+  // Rate limiting
+  const clientIP = req.headers.get('x-forwarded-for') || 
+                   req.headers.get('x-real-ip') || 
+                   'unknown'
+  
+  const now = Date.now()
+  const windowStart = Math.floor(now / WINDOW_MS) * WINDOW_MS
+  
+  if (!rateLimitMap.has(clientIP)) {
+    rateLimitMap.set(clientIP, { count: 1, resetTime: windowStart + WINDOW_MS })
+  } else {
+    const record = rateLimitMap.get(clientIP)!
+    
+    if (now > record.resetTime) {
+      record.count = 1
+      record.resetTime = windowStart + WINDOW_MS
+    } else {
+      record.count++
+    }
+    
+    if (record.count > RATE_LIMIT) {
+      return new Response(
+        JSON.stringify({
+          error: 'Rate limit exceeded',
+          retryAfter: Math.ceil((record.resetTime - now) / 1000)
+        }),
+        {
+          status: 429,
+          headers: {
+            ...corsHeaders,
+            'Content-Type': 'application/json',
+            'Retry-After': Math.ceil((record.resetTime - now) / 1000).toString()
+          },
+        }
+      )
+    }
   }
 
   try {
+
     const url = new URL(req.url)
-    const pathParts = url.pathname.split('/').filter(Boolean)
-    
-    // Extrair método e caminho da requisição
-    // /treexpay-proxy/payments -> POST /payments
-    // /treexpay-proxy/payments/123 -> GET /payments/123
-    
-    const method = req.method
-    const apiPath = pathParts.slice(1).join('/') // Remove 'treexpay-proxy'
-    
-    if (!apiPath) {
-      return new Response(
-        JSON.stringify({ error: 'Invalid path' }),
-        { status: 400, headers: corsHeaders }
-      )
-    }
 
-    // Construir URL da API TreexPay
-    const targetUrl = `${TREEXPAY_API_URL}/${apiPath}`
+    const path =
+      url.pathname.split('/treexpay-proxy')[1] || ''
     
-    console.log(`Proxy: ${method} ${targetUrl}`)
+    // Se path for vazio, não adiciona fallback /payments
+    const targetUrl = path ? `${API_URL}${path}` : API_URL 
 
-    // Preparar headers para a API TreexPay
-    const proxyHeaders: Record<string, string> = {
-      'x-api-key': API_KEY,
-      'Content-Type': 'application/json',
-    }
+    let body = null
 
-    // Copiar headers relevantes da requisição original
-    if (req.headers) {
-      for (const [key, value] of req.headers.entries()) {
-        if (key.toLowerCase().startsWith('content-') || 
-            key.toLowerCase().startsWith('accept-') ||
-            key.toLowerCase() === 'user-agent') {
-          proxyHeaders[key] = value
+    if (req.method !== 'GET') {
+      body = await req.text()
+      
+      // Sanitização básica
+      if (body.length > 100000) { // 100KB limit
+        return new Response(
+          JSON.stringify({
+            error: 'Payload too large'
+          }),
+          {
+            status: 413,
+            headers: {
+              ...corsHeaders,
+              'Content-Type': 'application/json',
+            },
+          }
+        )
+      }
+
+      // Validar amount
+      if (path === '/payments' && req.method === 'POST') {
+        try {
+          const parsedBody = JSON.parse(body);
+          const amount = parsedBody?.amount;
+          
+          if (!amount || typeof amount !== 'number' || amount < 100 || amount > 999999) {
+            return new Response(
+              JSON.stringify({
+                error: 'Invalid amount. Must be between 1.00 and 9999.99'
+              }),
+              {
+                status: 400,
+                headers: {
+                  ...corsHeaders,
+                  'Content-Type': 'application/json',
+                },
+              }
+            )
+          }
+        } catch (parseError) {
+          return new Response(
+            JSON.stringify({
+              error: 'Invalid JSON'
+            }),
+            {
+              status: 400,
+              headers: {
+                ...corsHeaders,
+                'Content-Type': 'application/json',
+              },
+            }
+          )
         }
       }
     }
 
-    // Fazer a requisição para a API TreexPay
-    let body: any = undefined
-    if (method !== 'GET' && req.body) {
-      try {
-        body = await req.json()
-      } catch (error) {
-        console.error('Erro ao parsear body:', error)
-        return new Response(
-          JSON.stringify({ error: 'Invalid JSON body' }),
-          { status: 400, headers: corsHeaders }
-        )
-      }
-    }
-
-    // Fazer requisição para API TreexPay
     const response = await fetch(targetUrl, {
-      method,
-      headers: proxyHeaders,
-      body: body ? JSON.stringify(body) : undefined,
+      method: req.method,
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': API_KEY!,
+      },
+      body,
     })
 
-    // Obter resposta
-    const responseData = await response.text()
-    
-    // Preparar headers de resposta
-    const responseHeaders: Record<string, string> = {
-      ...corsHeaders,
-      'Content-Type': response.headers.get('content-type') || 'application/json',
-    }
+    const data = await response.text()
 
-    // Copiar headers relevantes da resposta
-    for (const [key, value] of response.headers.entries()) {
-      if (key.toLowerCase().startsWith('content-') || 
-          key.toLowerCase().startsWith('cache-')) {
-        responseHeaders[key] = value
-      }
-    }
-
-    console.log(`Proxy Response: ${response.status} ${apiPath}`)
-
-    // Retornar resposta da API
-    return new Response(responseData, {
+    return new Response(data, {
       status: response.status,
-      headers: responseHeaders,
+      headers: {
+        ...corsHeaders,
+        'Content-Type': 'application/json',
+      },
     })
 
   } catch (error: any) {
-    console.error('Erro no proxy:', error)
+
     return new Response(
-      JSON.stringify({ 
-        error: 'Internal server error',
-        details: error.message 
+      JSON.stringify({
+        error: error.message,
       }),
-      { 
-        status: 500, 
-        headers: corsHeaders 
+      {
+        status: 500,
+        headers: {
+          ...corsHeaders,
+          'Content-Type': 'application/json',
+        },
       }
     )
   }

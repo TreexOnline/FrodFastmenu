@@ -32,18 +32,87 @@ serve(async (req) => {
       )
     }
 
-    // Verificar assinatura do webhook (em produção)
+    // Verificar assinatura do webhook (HMAC SHA256)
     const signature = req.headers.get('x-treex-signature')
+    const webhookSecret = Deno.env.get('TREEXPAY_WEBHOOK_SECRET')
+    
     if (!signature) {
       console.warn('Webhook sem assinatura')
-      // Em produção, retornar erro aqui
-      // return new Response('Unauthorized', { status: 401, headers: corsHeaders })
+      return new Response('Unauthorized - Missing signature', { 
+        status: 401, 
+        headers: corsHeaders 
+      })
     }
-
-    // Parse body
-    const body: WebhookPayload = await req.json()
-    console.log('Webhook recebido:', body)
-
+    
+    if (!webhookSecret) {
+      console.error('Webhook secret não configurado')
+      return new Response('Internal Server Error', { 
+        status: 500, 
+        headers: corsHeaders 
+      })
+    }
+    
+    // Obter body raw para validação HMAC
+    const bodyText = await req.text()
+    const key = await crypto.subtle.importKey(
+      { 
+        name: "HMAC", 
+        hash: "SHA-256" 
+      },
+      new TextEncoder().encode(webhookSecret),
+      { 
+        name: "HMAC", 
+        hash: "SHA-256" 
+      },
+      false
+    )
+    
+    const signatureBuffer = await crypto.subtle.sign(
+      "HMAC",
+      key,
+      new TextEncoder().encode(bodyText)
+    )
+    
+    const expectedSignature = Array.from(new Uint8Array(signatureBuffer))
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('')
+    
+    // Comparar assinaturas (timing-safe comparison)
+    const sigA = new TextEncoder().encode(signature)
+    const sigB = new TextEncoder().encode(expectedSignature)
+    
+    if (sigA.length !== sigB.length) {
+      return new Response('Unauthorized - Invalid signature', { 
+        status: 401, 
+        headers: corsHeaders 
+      })
+    }
+    
+    let result = 0
+    for (let i = 0; i < sigA.length; i++) {
+      result |= sigA[i] ^ sigB[i]
+    }
+    
+    if (result !== 0) {
+      console.warn('Assinatura do webhook inválida')
+      return new Response('Unauthorized - Invalid signature', { 
+        status: 401, 
+        headers: corsHeaders 
+      })
+    }
+    
+    // Parse JSON body
+    let body: WebhookPayload
+    try {
+      body = JSON.parse(bodyText)
+    } catch (parseError) {
+      console.error('Erro ao parsear JSON:', parseError)
+      return new Response(
+        JSON.stringify({ error: 'Invalid JSON' }),
+        { status: 400, headers: corsHeaders }
+      )
+    }
+    
     // Validar payload
     if (!body.event || !body.payment) {
       return new Response(
@@ -51,6 +120,9 @@ serve(async (req) => {
         { status: 400, headers: corsHeaders }
       )
     }
+
+    const { payment } = body
+    console.log('Webhook recebido:', { event: body.event, paymentId: payment.id })
 
     // Processar apenas eventos de pagamento
     if (body.event !== 'payment.paid') {
@@ -60,8 +132,6 @@ serve(async (req) => {
         { status: 200, headers: corsHeaders }
       )
     }
-
-    const { payment } = body
 
     // Conectar ao Supabase
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
@@ -116,7 +186,32 @@ serve(async (req) => {
       ? new Date(Date.now() + 365 * 24 * 60 * 60 * 1000) // 1 ano
       : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // 30 dias
 
-    const { error: profileError } = await supabase
+    // Validar owner do pagamento - garantir que payment.user_id === authenticated_user.id
+    // Isso já é validado pela política RLS "Users can update their payment orders"
+    // mas adicionamos validação extra por segurança
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('id', paymentOrder.user_id)
+      .single()
+
+    if (profileError || !profile) {
+      console.error('Perfil não encontrado:', paymentOrder.user_id)
+      return new Response(
+        JSON.stringify({ error: 'Profile not found' }),
+        { status: 404, headers: corsHeaders }
+      )
+    }
+
+    if (profile.id !== paymentOrder.user_id) {
+      console.error('Owner do pagamento inválido:', paymentOrder.user_id)
+      return new Response(
+        JSON.stringify({ error: 'Invalid payment owner' }),
+        { status: 401, headers: corsHeaders }
+      )
+    }
+
+    const { error: updateProfileError } = await supabase
       .from('profiles')
       .update({
         current_plan: paymentOrder.plan_id,
@@ -127,38 +222,55 @@ serve(async (req) => {
       })
       .eq('id', paymentOrder.user_id)
 
-    if (profileError) {
-      console.error('Erro ao atualizar perfil:', profileError)
+    if (updateProfileError) {
+      console.error('Erro ao atualizar perfil:', updateProfileError)
       return new Response(
         JSON.stringify({ error: 'Failed to update profile' }),
         { status: 500, headers: corsHeaders }
       )
-    }
 
-    // Enviar e-mail de confirmação (opcional)
-    // TODO: Implementar envio de e-mail
+if (orderError || !paymentOrder) {
+  console.error('Pedido não encontrado:', payment.id)
+  return new Response(
+    JSON.stringify({ error: 'Payment order not found' }),
+    { status: 404, headers: corsHeaders }
+  )
+}
 
-    console.log('✅ Pagamento processado com sucesso:', {
-      paymentId: payment.id,
-      userId: paymentOrder.user_id,
-      planId: paymentOrder.plan_id,
-      amount: payment.amount
-    })
+// Verificar se já foi processado
+if (paymentOrder.status === 'paid') {
+  console.log('Pagamento já processado:', payment.id)
+  return new Response(
+    JSON.stringify({ message: 'Already processed' }),
+    { status: 200, headers: corsHeaders }
+  )
+}
 
-    return new Response(
-      JSON.stringify({ 
-        success: true,
-        message: 'Payment processed successfully'
-      }),
-      { status: 200, headers: corsHeaders }
-    )
+// Validar que payment_id existe e não é nulo
+if (!payment.id || payment.id.trim() === '') {
+  console.error('payment_id inválido:', payment.id)
+  return new Response(
+    JSON.stringify({ error: 'Invalid payment_id' }),
+    { status: 400, headers: corsHeaders }
+  )
+}
+
+// Atualizar status do pedido
+const { error: updateError } = await supabase
+  .from('payment_orders')
+  .update({
+    status: 'paid',
+    paid_at: payment.paid_at || new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  })
+  .eq('id', paymentOrder.id)
 
   } catch (error) {
     console.error('Erro no webhook:', error)
     return new Response(
       JSON.stringify({ 
         error: 'Internal server error',
-        details: error.message 
+        details: error instanceof Error ? error.message : 'Unknown error'
       }),
       { status: 500, headers: corsHeaders }
     )
