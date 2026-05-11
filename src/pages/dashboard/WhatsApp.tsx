@@ -102,47 +102,84 @@ export default function WhatsAppPage() {
   // Estado local para debug logs
   const [debugLogs, setDebugLogs] = useState<string[]>([]);
 
-  // Função unificada de polling para status (inclui QR)
-  const startStatusPolling = (userId: string) => {
+  // Função de polling de QR Code
+  const startQrPolling = (storeId: string) => {
     // Limpar polling anterior se existir
     if (pollingRef.current) {
       clearInterval(pollingRef.current);
     }
     
-    // Iniciar novo polling
+    // Iniciar polling de QR a cada 2-3 segundos
     pollingRef.current = setInterval(async () => {
       try {
-        const result = await whatsappApi.getStatus(userId);
+        const result = await whatsappApi.getQr(storeId);
+        debugLog('📥 QR polling response', result);
+        
         if (result.success && result.data) {
-          debugLog('📥 Status received', result.data);
-          
-          setConnectionState({
-            status: result.data.status,
-            qr: result.data.qr || null,
-            phone: result.data.phone || null,
-            profileName: result.data.profile_name || null
-          });
-          
-          // Log específico para mudanças de estado
-          if (result.data.status === 'qr') {
-            debugLog('📲 QR state detected');
-            if (result.data.qr) {
-              debugLog('📸 QR received');
-            }
+          if (result.data.qr) {
+            // Exibir QR code no frontend
+            setConnectionState({
+              status: 'qr',
+              qr: result.data.qr,
+              phone: null,
+              profileName: null
+            });
+            debugLog('📸 QR Code received and displayed');
+          } else if (result.data.status === 'connected') {
+            // Redirecionar para dashboard quando conectar
+            debugLog('� Connected via QR polling - redirecting');
+            toast.success('WhatsApp conectado com sucesso!');
+            // Iniciar polling de status para manter atualizado
+            startStatusPolling(storeId);
           }
-          
-          // Parar polling quando conectar com sucesso
-          if (result.data.status === 'connected') {
-            debugLog('🟢 CONNECTED - stopping flow');
+        }
+      } catch (error) {
+        debugLog('❌ QR polling error', { error: error.message });
+      }
+    }, 2500); // A cada 2.5 segundos
+  };
+  
+  // Função de polling de Status
+  const startStatusPolling = (storeId: string) => {
+    // Limpar polling anterior se existir
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+    }
+    
+    // Iniciar polling de status a cada 3 segundos
+    pollingRef.current = setInterval(async () => {
+      try {
+        const result = await whatsappApi.getStatus(storeId);
+        debugLog('📥 Status polling response', result);
+        
+        if (result.success && result.data) {
+          if (result.data.connected) {
+            // Mostrar status conectado
+            setConnectionState({
+              status: 'connected',
+              qr: null,
+              phone: result.data.phone,
+              profileName: null
+            });
+            debugLog('🟢 Status connected', { phone: result.data.phone });
+            
+            // Parar polling quando estiver conectado
             if (pollingRef.current) {
               clearInterval(pollingRef.current);
               pollingRef.current = null;
             }
+          } else {
+            // Status não conectado
+            setConnectionState({
+              status: result.data.status || 'disconnected',
+              qr: null,
+              phone: null,
+              profileName: null
+            });
           }
         }
       } catch (error) {
         debugLog('❌ Status polling error', { error: error.message });
-        console.error('Erro no polling de status:', error);
       }
     }, 3000); // A cada 3 segundos
   };
@@ -246,37 +283,18 @@ export default function WhatsAppPage() {
       return;
     }
     
-    debugLog('🚀 Connect clicked', { userId: user.id, phoneNumber: cleanPhone });
+    debugLog('🚀 Connect clicked', { storeId: user.id, phoneNumber: cleanPhone });
     setConnecting(true);
     try {
+      // 1. POST /connect: Inicia conexão com número
       const result = await whatsappApi.connect(user.id, cleanPhone);
       debugLog('📡 Connect API response', result);
       
       if (result.success && result.data) {
-        // Tratar diferentes tipos de resposta
-        if (result.data.connectionStatus === 'connected') {
-          // Já estava conectado
-          toast.success('WhatsApp já está conectado!');
-          setConnectionState({
-            status: 'connected',
-            qr: null,
-            phone: result.data.phone,
-            profileName: result.data.profileName
-          });
-        } else if (result.data.connectionStatus === 'qr' && result.data.qr) {
-          // QR Code gerado (nova instância ou reconexão)
-          const message = result.data.message || 'QR Code gerado com sucesso!';
-          toast.success(message);
-          setConnectionState({
-            status: 'qr',
-            qr: result.data.qr.base64,
-            phone: null,
-            profileName: null
-          });
-          
-          // Iniciar polling para detectar quando conectar
-          startStatusPolling(user.id);
-        }
+        // 2. Iniciar polling de QR para buscar QR a cada 2-3 segundos
+        startQrPolling(user.id);
+        toast.success("Conexão iniciada! Aguarde o QR Code...");
+        debugLog('🔁 QR polling started for connection flow');
       }
     } catch (error: any) {
       debugLog('❌ Connect error', { error: error.message });
@@ -289,7 +307,7 @@ export default function WhatsAppPage() {
   const handleDisconnect = async () => {
     if (!user || !confirm("Desconectar o WhatsApp?")) return;
     
-    debugLog('🔌 Disconnect clicked', { userId: user.id });
+    debugLog('🔌 Disconnect clicked', { storeId: user.id });
     setConnecting(true);
     try {
       await whatsappApi.disconnect(user.id);
@@ -303,6 +321,9 @@ export default function WhatsAppPage() {
         phone: null,
         profileName: null
       });
+      
+      // Parar polling
+      stopPolling();
     } catch (error: any) {
       debugLog('❌ Disconnect error', { error: error.message });
       toast.error("Erro ao desconectar: " + (error.message || "Tente novamente"));
@@ -580,7 +601,10 @@ export default function WhatsAppPage() {
                 <Button
                   variant="outline"
                   onClick={() => {
-                    if (user) startStatusPolling(user.id);
+                    if (user) {
+                      // Iniciar polling de status para verificar se conectou
+                      startStatusPolling(user.id);
+                    }
                   }}
                   disabled={connecting}
                 >
@@ -617,7 +641,7 @@ export default function WhatsAppPage() {
               ) : connectionState.status === 'qr' ? (
                 <div className="rounded-2xl bg-white p-4 shadow-sm border">
                   <img
-                    src={`data:image/png;base64,${connectionState.qr}`}
+                    src={connectionState.qr}
                     alt="QR Code"
                     className="w-64 h-64 object-contain"
                   />

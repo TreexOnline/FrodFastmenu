@@ -3,9 +3,9 @@ export const WHATSAPP_API_BASE_URL = 'https://bot-zap-production-9534.up.railway
 
 // Helper para fazer requisições à API do WhatsApp Engine
 export const whatsappApi = {
-  // POST /connect/{userId}
-  connect: async (userId: string, phoneNumber: string) => {
-    const response = await fetch(`${WHATSAPP_API_BASE_URL}/connect/${userId}`, {
+  // POST /connect/:storeId
+  connect: async (storeId: string, phoneNumber: string) => {
+    const response = await fetch(`${WHATSAPP_API_BASE_URL}/connect/${storeId}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -16,58 +16,46 @@ export const whatsappApi = {
     });
     
     if (!response.ok) {
-      throw new Error(`Erro ao conectar: ${response.status} ${response.statusText}`);
+      const error = await response.json();
+      if (error.code === 'MISSING_PHONE_NUMBER') {
+        throw new Error('Número de telefone obrigatório');
+      }
+      throw new Error(error.error || `Erro ao conectar: ${response.status} ${response.statusText}`);
     }
     
     const data = await response.json();
-    
-    // Tratar novo formato de resposta Evolution API
-    if (data.success) {
-      return data;
-    } else {
-      throw new Error(data.error || 'Connection failed');
-    }
+    return data;
   },
 
-  // GET /qr/{userId}
-  getQr: async (userId: string) => {
-    const response = await fetch(`${WHATSAPP_API_BASE_URL}/qr/${userId}`);
+  // GET /qr/:storeId
+  getQr: async (storeId: string) => {
+    const response = await fetch(`${WHATSAPP_API_BASE_URL}/qr/${storeId}`);
     
     if (!response.ok) {
-      throw new Error(`Erro ao buscar QR: ${response.status} ${response.statusText}`);
+      const error = await response.json();
+      throw new Error(error.error || `Erro ao buscar QR: ${response.status} ${response.statusText}`);
     }
     
     const data = await response.json();
-    
-    // Tratar novo formato de resposta Evolution API
-    if (data.success) {
-      return data;
-    } else {
-      throw new Error(data.error || 'QR generation failed');
-    }
+    return data;
   },
 
-  // GET /status/{userId}
-  getStatus: async (userId: string) => {
-    const response = await fetch(`${WHATSAPP_API_BASE_URL}/status/${userId}`);
+  // GET /status/:storeId
+  getStatus: async (storeId: string) => {
+    const response = await fetch(`${WHATSAPP_API_BASE_URL}/status/${storeId}`);
     
     if (!response.ok) {
-      throw new Error(`Erro ao buscar status: ${response.status} ${response.statusText}`);
+      const error = await response.json();
+      throw new Error(error.error || `Erro ao buscar status: ${response.status} ${response.statusText}`);
     }
     
     const data = await response.json();
-    
-    // Tratar novo formato de resposta Evolution API
-    if (data.success) {
-      return data;
-    } else {
-      throw new Error(data.error || 'Status check failed');
-    }
+    return data;
   },
 
-  // POST /disconnect/{userId}
-  disconnect: async (userId: string) => {
-    const response = await fetch(`${WHATSAPP_API_BASE_URL}/disconnect/${userId}`, {
+  // POST /disconnect/:storeId
+  disconnect: async (storeId: string) => {
+    const response = await fetch(`${WHATSAPP_API_BASE_URL}/disconnect/${storeId}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -75,17 +63,12 @@ export const whatsappApi = {
     });
     
     if (!response.ok) {
-      throw new Error(`Erro ao desconectar: ${response.status} ${response.statusText}`);
+      const error = await response.json();
+      throw new Error(error.error || `Erro ao desconectar: ${response.status} ${response.statusText}`);
     }
     
     const data = await response.json();
-    
-    // Tratar novo formato de resposta Evolution API
-    if (data.success) {
-      return data;
-    } else {
-      throw new Error(data.error || 'Disconnect failed');
-    }
+    return data;
   },
 
   // POST /save-config/{userId}
