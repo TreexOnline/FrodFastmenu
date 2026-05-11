@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { useWhatsappAddon } from "@/hooks/useWhatsappAddon";
 import { whatsappApi } from "@/config/whatsapp-api";
@@ -85,6 +86,7 @@ export default function WhatsAppPage() {
   const [messageText, setMessageText] = useState("");
   const [cooldownHours, setCooldownHours] = useState("24");
   const [isActive, setIsActive] = useState(true);
+  const [phoneNumber, setPhoneNumber] = useState("");
   
   // Estados para integração com WhatsApp Engine
   const [connectionState, setConnectionState] = useState({
@@ -230,16 +232,52 @@ export default function WhatsAppPage() {
   const handleConnect = async () => {
     if (!user) return;
     
-    debugLog('🚀 Connect clicked', { userId: user.id });
+    if (!phoneNumber.trim()) {
+      toast.error("Digite seu número de WhatsApp com DDI");
+      return;
+    }
+    
+    // Validar formato do número (DDI + DDD + número)
+    const phoneRegex = /^\d{10,15}$/;
+    const cleanPhone = phoneNumber.replace(/\D/g, '');
+    
+    if (!phoneRegex.test(cleanPhone)) {
+      toast.error("Formato inválido. Use: 559999999999");
+      return;
+    }
+    
+    debugLog('🚀 Connect clicked', { userId: user.id, phoneNumber: cleanPhone });
     setConnecting(true);
     try {
-      await whatsappApi.connect(user.id);
-      toast.success("Conexão iniciada! Aguarde o QR Code...");
-      debugLog('🔁 Connect API called successfully');
+      const result = await whatsappApi.connect(user.id, cleanPhone);
+      debugLog('📡 Connect API response', result);
       
-      // Iniciar polling de status para detectar mudanças
-      debugLog('🔁 Status polling started');
-      startStatusPolling(user.id);
+      if (result.success && result.data) {
+        // Tratar diferentes tipos de resposta
+        if (result.data.connectionStatus === 'connected') {
+          // Já estava conectado
+          toast.success('WhatsApp já está conectado!');
+          setConnectionState({
+            status: 'connected',
+            qr: null,
+            phone: result.data.phone,
+            profileName: result.data.profileName
+          });
+        } else if (result.data.connectionStatus === 'qr' && result.data.qr) {
+          // QR Code gerado (nova instância ou reconexão)
+          const message = result.data.message || 'QR Code gerado com sucesso!';
+          toast.success(message);
+          setConnectionState({
+            status: 'qr',
+            qr: result.data.qr.base64,
+            phone: null,
+            profileName: null
+          });
+          
+          // Iniciar polling para detectar quando conectar
+          startStatusPolling(user.id);
+        }
+      }
     } catch (error: any) {
       debugLog('❌ Connect error', { error: error.message });
       toast.error("Erro ao conectar: " + (error.message || "Tente novamente"));
@@ -458,6 +496,25 @@ export default function WhatsAppPage() {
         <CardContent>
           <div className="grid lg:grid-cols-2 gap-6 items-start">
             <div className="space-y-4">
+              {/* Input do número de WhatsApp */}
+              {connectionState.status !== 'connected' && (
+                <div className="space-y-2">
+                  <Label htmlFor="phone">Número do WhatsApp</Label>
+                  <Input
+                    id="phone"
+                    type="tel"
+                    placeholder="559999999999"
+                    value={phoneNumber}
+                    onChange={(e) => setPhoneNumber(e.target.value)}
+                    disabled={connecting}
+                    className="font-mono"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Digite seu número com DDI (ex: 559999999999)
+                  </p>
+                </div>
+              )}
+
               <div className="flex items-center gap-3">
                 {connectionState.status === 'connected' ? (
                   <>
@@ -471,8 +528,13 @@ export default function WhatsAppPage() {
                       </span>
                     )}
                   </>
-                ) : connectionState.status === 'connecting' ? (
+                ) : connectionState.status === 'qr' ? (
                   <Badge className="bg-yellow-500/15 text-yellow-600 hover:bg-yellow-500/20 border-yellow-500/30">
+                    <QrCode className="w-3.5 h-3.5 mr-1" />
+                    Aguardando Leitura
+                  </Badge>
+                ) : connectionState.status === 'connecting' ? (
+                  <Badge className="bg-blue-500/15 text-blue-600 hover:bg-blue-500/20 border-blue-500/30">
                     <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
                     Conectando
                   </Badge>
@@ -505,8 +567,8 @@ export default function WhatsAppPage() {
               )}
 
               <div className="flex flex-wrap gap-2">
-                {connectionState.status !== 'connected' && connectionState.status !== 'connecting' && (
-                  <Button onClick={handleConnect} disabled={connecting}>
+                {connectionState.status !== 'connected' && connectionState.status !== 'connecting' && connectionState.status !== 'qr' && (
+                  <Button onClick={handleConnect} disabled={connecting || !phoneNumber.trim()}>
                     {connecting ? (
                       <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                     ) : (
@@ -552,23 +614,23 @@ export default function WhatsAppPage() {
                     WhatsApp ativo e funcionando
                   </p>
                 </div>
-              ) : connectionState.qr ? (
+              ) : connectionState.status === 'qr' ? (
                 <div className="rounded-2xl bg-white p-4 shadow-sm border">
                   <img
-                    src={connectionState.qr}
+                    src={`data:image/png;base64,${connectionState.qr}`}
                     alt="QR Code"
                     className="w-64 h-64 object-contain"
                   />
                   <p className="text-center text-xs text-muted-foreground mt-2">
-                    Escaneie com seu WhatsApp
+                    Escaneie com seu WhatsApp → Aparelhos conectados
                   </p>
                 </div>
               ) : connectionState.status === 'connecting' ? (
-                <div className="rounded-2xl border-2 border-dashed border-yellow-500/30 bg-yellow-500/5 p-12 text-center">
-                  <Loader2 className="w-16 h-16 mx-auto mb-3 text-yellow-600 animate-spin" />
-                  <p className="font-medium">Gerando QR Code...</p>
+                <div className="rounded-2xl border-2 border-dashed border-blue-500/30 bg-blue-500/5 p-12 text-center">
+                  <Loader2 className="w-16 h-16 mx-auto mb-3 text-blue-600 animate-spin" />
+                  <p className="font-medium">Conectando...</p>
                   <p className="text-sm text-muted-foreground">
-                    Aguarde um momento
+                    Iniciando conexão com API
                   </p>
                 </div>
               ) : (

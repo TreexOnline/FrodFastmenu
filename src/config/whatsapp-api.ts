@@ -4,12 +4,15 @@ export const WHATSAPP_API_BASE_URL = 'https://bot-zap-production-9534.up.railway
 // Helper para fazer requisições à API do WhatsApp Engine
 export const whatsappApi = {
   // POST /connect/{userId}
-  connect: async (userId: string) => {
+  connect: async (userId: string, phoneNumber: string) => {
     const response = await fetch(`${WHATSAPP_API_BASE_URL}/connect/${userId}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
+      body: JSON.stringify({
+        phoneNumber: phoneNumber
+      }),
     });
     
     if (!response.ok) {
