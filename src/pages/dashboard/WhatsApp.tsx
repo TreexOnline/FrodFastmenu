@@ -140,26 +140,27 @@ export default function WhatsAppPage() {
       const result = await whatsappApi.getStatus(storeId);
       if (isDev) debugLog('📥 Status polling response', result);
       
-      if (result.success && result.data) {
+      if (result.success) {
         const connectionStatus =
-          result.data.connection_status ||
-          result.data.state ||
+          result.connection_status ||
+          result.state ||
+          result.status ||
           'disconnected';
         
         // Verificar estados finais
-        if (FINAL_STATES.includes(connectionStatus) || result.data.connected) {
+        if (FINAL_STATES.includes(connectionStatus) || result.connected) {
           if (isDev) debugLog('🏁 Estado final alcançado:', connectionStatus);
           
-          if (result.data.connected || connectionStatus === 'connected') {
+          if (result.connected || connectionStatus === 'connected') {
             setConnectionState(prev => {
-              if (prev.status === 'connected' && prev.phone === result.data.phone) {
+              if (prev.status === 'connected' && prev.phone === result.phone) {
                 return prev;
               }
               return {
                 status: 'connected',
                 qr: null,
-                phone: result.data.phone,
-                profileName: result.data.profile_name || null
+                phone: result.phone,
+                profileName: result.profile_name || result.profileName || null
               };
             });
             // Evitar toast duplicado
@@ -179,9 +180,10 @@ export default function WhatsAppPage() {
         // Status não conectado - verificar se há QR code
         setConnectionState(prev => {
           const newQr =
-            result.data.qr_code ||
-            result.data.qrcode?.base64 ||
-            result.data.base64 ||
+            result.qr_code ||
+            result.qrcode?.base64 ||
+            result.base64 ||
+            result.qrCode ||
             null;
           
           let normalizedStatus = connectionStatus;
@@ -198,12 +200,12 @@ export default function WhatsAppPage() {
             status: normalizedStatus,
             qr: newQr,
             phone:
-              result.data.phone ||
-              result.data.number ||
+              result.phone ||
+              result.number ||
               null,
             profileName:
-              result.data.profile_name ||
-              result.data.profileName ||
+              result.profile_name ||
+              result.profileName ||
               null
           };
         });
@@ -356,7 +358,7 @@ export default function WhatsAppPage() {
       const result = await whatsappApi.connect(user.id, cleanPhone);
       debugLog('📡 Connect API response', result);
       
-      if (result.success && result.data) {
+      if (result.success) {
         // 2. Iniciar polling de status unificado (busca QR e status a cada 5s)
         startStatusPolling(user.id);
         toast.success("Conexão iniciada! Aguarde o QR Code...");
