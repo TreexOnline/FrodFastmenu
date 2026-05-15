@@ -98,28 +98,54 @@ export default function WhatsAppPage() {
   
   // Ref para polling unificado
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
+  const pollingActiveRef = useRef<boolean>(false);
+  const attemptCountRef = useRef<number>(0);
+  const backoffDelayRef = useRef<number>(5000);
   
-  // Estado local para debug logs
+  // Configurações de polling
+  const MAX_ATTEMPTS = 30; // 30 tentativas = 2min30s
+  const BASE_DELAY = 5000; // 5 segundos
+  const MAX_BACKOFF_DELAY = 30000; // 30 segundos máximo
+  const FINAL_STATES = ['connected', 'failed', 'destroyed', 'logged_out', 'session_not_found'];
+  
+  // Estado local para debug logs (apenas em desenvolvimento)
   const [debugLogs, setDebugLogs] = useState<string[]>([]);
+  const isDev = process.env.NODE_ENV === 'development';
 
-  // Função de polling de Status
-  const startStatusPolling = (storeId: string) => {
-    // Limpar polling anterior se existir
-    if (pollingRef.current) {
-      clearInterval(pollingRef.current);
+  // Função de polling de Status (setTimeout recursivo)
+  const pollStatus = async (storeId: string) => {
+    // Verificar lock anti-duplo
+    if (pollingActiveRef.current) {
+      if (isDev) debugLog('🔒 Polling já ativo, ignorando chamada duplicada');
+      return;
     }
     
-    // Iniciar polling de status a cada 5 segundos
-    pollingRef.current = setInterval(async () => {
-      try {
-        const result = await whatsappApi.getStatus(storeId);
-        debugLog('📥 Status polling response', result);
+    // Verificar timeout global
+    if (attemptCountRef.current >= MAX_ATTEMPTS) {
+      if (isDev) debugLog('⏰ Timeout global atingido, parando polling');
+      stopPolling();
+      toast.error('Timeout da conexão. Tente novamente.');
+      return;
+    }
+    
+    pollingActiveRef.current = true;
+    attemptCountRef.current++;
+    
+    if (isDev) debugLog(`📥 Polling attempt ${attemptCountRef.current}/${MAX_ATTEMPTS}`);
+    
+    try {
+      const result = await whatsappApi.getStatus(storeId);
+      if (isDev) debugLog('📥 Status polling response', result);
+      
+      if (result.success && result.data) {
+        const connectionStatus = result.data.connection_status || 'disconnected';
         
-        if (result.success && result.data) {
-          if (result.data.connected) {
-            // Mostrar status conectado
+        // Verificar estados finais
+        if (FINAL_STATES.includes(connectionStatus) || result.data.connected) {
+          if (isDev) debugLog('🏁 Estado final alcançado:', connectionStatus);
+          
+          if (result.data.connected || connectionStatus === 'connected') {
             setConnectionState(prev => {
-              // Evitar rerender se já estiver conectado com mesmo estado
               if (prev.status === 'connected' && prev.phone === result.data.phone) {
                 return prev;
               }
@@ -130,49 +156,81 @@ export default function WhatsAppPage() {
                 profileName: result.data.profile_name || null
               };
             });
-            debugLog('🟢 Status connected', { phone: result.data.phone });
-            
-            // Parar polling quando estiver conectado
-            if (pollingRef.current) {
-              clearInterval(pollingRef.current);
-              pollingRef.current = null;
-            }
-          } else {
-            // Status não conectado - verificar se há QR code
-            setConnectionState(prev => {
-              const newStatus = result.data.connection_status || 'disconnected';
-              const newQr = result.data.qr_code || null;
-              
-              // Evitar rerender se status e QR não mudaram
-              if (prev.status === newStatus && prev.qr === newQr) {
-                return prev;
-              }
-              
-              return {
-                status: newStatus,
-                qr: newQr,
-                phone: result.data.phone || null,
-                profileName: result.data.profile_name || null
-              };
-            });
+            toast.success('WhatsApp conectado com sucesso!');
+          } else if (connectionStatus === 'failed' || connectionStatus === 'destroyed') {
+            toast.error('Falha na conexão do WhatsApp.');
+          } else if (connectionStatus === 'logged_out') {
+            toast.error('WhatsApp desconectado.');
           }
+          
+          stopPolling();
+          return;
         }
-      } catch (error) {
-        debugLog('❌ Status polling error', { error: error.message });
+        
+        // Status não conectado - verificar se há QR code
+        setConnectionState(prev => {
+          const newQr = result.data.qr_code || null;
+          
+          if (prev.status === connectionStatus && prev.qr === newQr) {
+            return prev;
+          }
+          
+          return {
+            status: connectionStatus,
+            qr: newQr,
+            phone: result.data.phone || null,
+            profileName: result.data.profile_name || null
+          };
+        });
+        
+ // Resetar backoff em sucesso
+        backoffDelayRef.current = BASE_DELAY;
       }
-    }, 5000); // A cada 5 segundos
+    } catch (error) {
+      if (isDev) debugLog('❌ Status polling error', { error: error.message });
+      
+      // Backoff exponencial em erro
+      backoffDelayRef.current = Math.min(backoffDelayRef.current * 2, MAX_BACKOFF_DELAY);
+      if (isDev) debugLog(`⏱️ Backoff aumentado para ${backoffDelayRef.current}ms`);
+    } finally {
+      pollingActiveRef.current = false;
+      
+      // Continuar polling se não estiver em estado final
+      if (pollingRef.current) {
+        pollingRef.current = setTimeout(() => pollStatus(storeId), backoffDelayRef.current);
+      }
+    }
+  };
+  
+  const startStatusPolling = (storeId: string) => {
+    // Limpar polling anterior se existir
+    stopPolling();
+    
+    // Resetar contadores
+    attemptCountRef.current = 0;
+    backoffDelayRef.current = BASE_DELAY;
+    pollingActiveRef.current = false;
+    
+    if (isDev) debugLog('🚀 Iniciando polling de status');
+    
+    // Iniciar polling recursivo
+    pollingRef.current = setTimeout(() => pollStatus(storeId), BASE_DELAY);
   };
   
   // Função para parar polling
   const stopPolling = () => {
     if (pollingRef.current) {
-      clearInterval(pollingRef.current);
+      clearTimeout(pollingRef.current);
       pollingRef.current = null;
     }
+    pollingActiveRef.current = false;
+    if (isDev) debugLog('🛑 Polling parado');
   };
   
-  // Função de debug local
+  // Função de debug local (apenas em desenvolvimento)
   const debugLog = (message: string, data?: any) => {
+    if (!isDev) return;
+    
     const time = new Date().toLocaleTimeString();
     const formatted = data 
       ? `[${time}] ${message} - ${JSON.stringify(data)}` 
@@ -201,19 +259,38 @@ export default function WhatsAppPage() {
   useEffect(() => {
     const init = async () => {
       await loadAutoMessage();
-      setLoading(false); // ✅ garantir saída do loading
+      setLoading(false);
     };
 
     if (user) {
       init();
     } else {
-      setLoading(false); // fallback de segurança
+      setLoading(false);
     }
 
     return () => {
       stopPolling();
     };
   }, [user]);
+  
+  // Pausar polling quando aba está oculta
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        if (pollingRef.current) {
+          if (isDev) debugLog('👁️ Aba oculta, pausando polling');
+          clearTimeout(pollingRef.current);
+          pollingRef.current = null;
+        }
+      } else if (user && connectionState.status !== 'connected' && connectionState.status !== 'idle') {
+        if (isDev) debugLog('👁️ Aba visível, retomando polling');
+        startStatusPolling(user.id);
+      }
+    };
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [user, connectionState.status]);
 
   // Realtime updates para mensagens (WebSocket cuida do status)
   useEffect(() => {
