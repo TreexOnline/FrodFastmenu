@@ -141,26 +141,27 @@ export default function WhatsAppPage() {
       if (isDev) debugLog('📥 Status polling response', result);
       
       if (result.success) {
+        const payload = result.data || result;
         const connectionStatus =
-          result.connection_status ||
-          result.state ||
-          result.status ||
+          payload.connection_status ||
+          payload.state ||
+          payload.status ||
           'disconnected';
         
         // Verificar estados finais
-        if (FINAL_STATES.includes(connectionStatus) || result.connected) {
+        if (FINAL_STATES.includes(connectionStatus) || payload.connected) {
           if (isDev) debugLog('🏁 Estado final alcançado:', connectionStatus);
           
-          if (result.connected || connectionStatus === 'connected') {
+          if (payload.connected || connectionStatus === 'connected') {
             setConnectionState(prev => {
-              if (prev.status === 'connected' && prev.phone === result.phone) {
+              if (prev.status === 'connected' && prev.phone === payload.phone) {
                 return prev;
               }
               return {
                 status: 'connected',
                 qr: null,
-                phone: result.phone,
-                profileName: result.profile_name || result.profileName || null
+                phone: payload.phone,
+                profileName: payload.profile_name || payload.profileName || null
               };
             });
             // Evitar toast duplicado
@@ -180,10 +181,11 @@ export default function WhatsAppPage() {
         // Status não conectado - verificar se há QR code
         setConnectionState(prev => {
           const newQr =
-            result.qr_code ||
-            result.qrcode?.base64 ||
-            result.base64 ||
-            result.qrCode ||
+            payload.qr ||
+            payload.qr_code ||
+            payload.qrcode?.base64 ||
+            payload.base64 ||
+            payload.qrCode ||
             null;
           
           let normalizedStatus = connectionStatus;
@@ -200,12 +202,12 @@ export default function WhatsAppPage() {
             status: normalizedStatus,
             qr: newQr,
             phone:
-              result.phone ||
-              result.number ||
+              payload.phone ||
+              payload.number ||
               null,
             profileName:
-              result.profile_name ||
-              result.profileName ||
+              payload.profile_name ||
+              payload.profileName ||
               null
           };
         });
