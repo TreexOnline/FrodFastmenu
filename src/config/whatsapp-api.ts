@@ -27,19 +27,6 @@ export const whatsappApi = {
     return data;
   },
 
-  // GET /qr/:storeId
-  getQr: async (storeId: string) => {
-    const response = await fetch(`${WHATSAPP_API_BASE_URL}/qr/${storeId}`);
-    
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || `Erro ao buscar QR: ${response.status} ${response.statusText}`);
-    }
-    
-    const data = await response.json();
-    return data;
-  },
-
   // GET /status/:storeId
   getStatus: async (storeId: string) => {
     const response = await fetch(`${WHATSAPP_API_BASE_URL}/status/${storeId}`);
