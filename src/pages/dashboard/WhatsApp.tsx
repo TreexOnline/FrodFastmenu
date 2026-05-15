@@ -141,7 +141,10 @@ export default function WhatsAppPage() {
       if (isDev) debugLog('📥 Status polling response', result);
       
       if (result.success && result.data) {
-        const connectionStatus = result.data.connection_status || 'disconnected';
+        const connectionStatus =
+          result.data.connection_status ||
+          result.data.state ||
+          'disconnected';
         
         // Verificar estados finais
         if (FINAL_STATES.includes(connectionStatus) || result.data.connected) {
@@ -175,17 +178,33 @@ export default function WhatsAppPage() {
         
         // Status não conectado - verificar se há QR code
         setConnectionState(prev => {
-          const newQr = result.data.qr_code || null;
+          const newQr =
+            result.data.qr_code ||
+            result.data.qrcode?.base64 ||
+            result.data.base64 ||
+            null;
           
-          if (prev.status === connectionStatus && prev.qr === newQr) {
+          let normalizedStatus = connectionStatus;
+          
+          if (newQr && connectionStatus === 'connecting') {
+            normalizedStatus = 'qr';
+          }
+          
+          if (prev.status === normalizedStatus && prev.qr === newQr) {
             return prev;
           }
           
           return {
-            status: connectionStatus,
+            status: normalizedStatus,
             qr: newQr,
-            phone: result.data.phone || null,
-            profileName: result.data.profile_name || null
+            phone:
+              result.data.phone ||
+              result.data.number ||
+              null,
+            profileName:
+              result.data.profile_name ||
+              result.data.profileName ||
+              null
           };
         });
         
