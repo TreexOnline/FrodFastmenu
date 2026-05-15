@@ -116,16 +116,16 @@ export default function WhatsAppPage() {
         debugLog('📥 QR polling response', result);
         
         if (result.success && result.data) {
-          if (result.data.qr) {
+          if (result.data.qr_code) {
             // Exibir QR code no frontend
             setConnectionState({
               status: 'qr',
-              qr: result.data.qr,
+              qr: result.data.qr_code,
               phone: null,
               profileName: null
             });
             debugLog('📸 QR Code received and displayed');
-          } else if (result.data.status === 'connected') {
+          } else if (result.data.connection_status === 'connected') {
             // Redirecionar para dashboard quando conectar
             debugLog('� Connected via QR polling - redirecting');
             toast.success('WhatsApp conectado com sucesso!');
@@ -171,7 +171,7 @@ export default function WhatsAppPage() {
           } else {
             // Status não conectado
             setConnectionState({
-              status: result.data.status || 'disconnected',
+              status: result.data.connection_status || 'disconnected',
               qr: null,
               phone: null,
               profileName: null
